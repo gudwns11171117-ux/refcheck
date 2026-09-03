@@ -17,7 +17,7 @@ from urllib.parse import quote
 import httpx
 from rapidfuzz import fuzz
 
-from . import cache, kosha, riss
+from . import cache, kosha, lawgo, riss
 from .parse import (HANGUL_RE, KOREA_HINT_RE, ParsedRef, detect_lang, norm_for_match, parse_reference)
 
 UA = "RefCheck/1.0 (local reference verification tool)"
@@ -172,7 +172,17 @@ def score_candidate(ref: ParsedRef, c: Candidate) -> None:
     # 비교할 수 없다는 뜻으로 None(모름)을 남긴다.
     if ref.first_author and c.authors:
         fa = norm_for_match(ref.first_author)
-        same_script = [a for a in c.authors if detect_lang(a) == detect_lang(ref.first_author)]
+        # RISS 는 저자를 '김영진(Kim Young Chin)' 처럼 병기한다. 괄호 안팎을 갈라 두어야
+        # 국문 이름끼리 견줄 수 있다. 안 그러면 같은 사람인데 '저자 불일치'로 표시된다.
+        names_split: list[str] = []
+        for a in c.authors:
+            base = re.sub(r"[\(（][^)）]*[\)）]", " ", a).strip()
+            if base:
+                names_split.append(base)
+            names_split.extend(x.strip() for x in re.findall(r"[\(（]([^)）]*)[\)）]", a) if x.strip())
+            if not base:
+                names_split.append(a)
+        same_script = [a for a in names_split if detect_lang(a) == detect_lang(ref.first_author)]
         if fa and same_script:
             names = " ".join(norm_for_match(a) for a in same_script)
             c.author_ok = fa in names or any(fa in norm_for_match(a) for a in same_script)
@@ -181,7 +191,7 @@ def score_candidate(ref: ParsedRef, c: Candidate) -> None:
             # 맞으면 확실한 근거지만, 안 맞는다고 '불일치'로 단정하지는 않는다.
             # 로마자 표기는 사람마다 달라(이/Lee/Yi/Rhee) 대응표가 완전할 수 없기 때문이다.
             surs = kosha.surname_candidates(ref.first_author)
-            ko_names = [a for a in c.authors if detect_lang(a) == "ko"]
+            ko_names = [a for a in names_split if detect_lang(a) == "ko"]
             if surs and ko_names and any(a.lstrip("(").startswith(s) for a in ko_names for s in surs):
                 c.author_ok = True
     if ref.container and c.container and detect_lang(ref.container) == detect_lang(c.container):
@@ -661,8 +671,81 @@ async def check_url(client, url: str) -> tuple[str, str]:
 
 # ---------------------------------------------------------------- 링크
 def _law_name(raw: str) -> Optional[str]:
-    m = re.search(r"([가-힣·\s]{2,40}?(?:법률|법|시행령|시행규칙|규칙|고시|조례))", raw)
-    return m.group(1).strip() if m else None
+    """'산업안전보건법 시행규칙' 처럼 뒤에 붙는 말까지 포함해 가장 긴 이름을 고른다."""
+    best = None
+    for m in re.finditer(r"([가-힣·\s]{2,40}?(?:법률|법)(?:\s*시행령|\s*시행규칙)?|"
+                         r"[가-힣·\s]{2,40}?(?:시행령|시행규칙|규칙|고시|지침|조례))", raw):
+        t = m.group(1).strip()
+        if best is None or len(t) > len(best):
+            best = t
+    return best
+
+
+async def check_law(client: httpx.AsyncClient,
+                    ref: ParsedRef) -> tuple[str, list[str], list[str], Optional[Candidate]]:
+    """법령·행정규칙을 국가법령정보센터에서 실제로 찾아본다.
+
+    영문으로 인용해도 발령번호([2020-53])와 부처명만 있으면 국문 규칙명을 몰라도 찾아진다.
+    돌려주는 값: (판정, 비고, 주의, 찾은 것)
+    """
+    notes: list[str] = []
+    mi = lawgo.ministry_of(ref.raw)
+    no = lawgo.notice_no(ref.raw)
+
+    def cand(name, url, year=None, container=None) -> Candidate:
+        c = Candidate("lawgo", name, [mi] if mi else [], year, container, None, url)
+        c.title_sim, c.score = 100.0, 1.0
+        c.year_ok = c.author_ok = c.container_ok = None
+        return c
+
+    # 1) 고시·훈령·예규: 발령번호로 목록을 받아 소관부처로 가린다
+    if no:
+        try:
+            items = await lawgo.search_admrul(client, no.replace("-", ""))
+        except httpx.HTTPError:
+            items = []
+        hit = [x for x in items if x.notice_no == no and (not mi or x.ministry == mi)]
+        if len(hit) == 1 or (hit and mi):
+            x = hit[0]
+            notes.append(f"국가법령정보센터에서 확인했습니다. {x.ministry or ''}고시 제{x.notice_no}호"
+                         + (f", 시행 {x.effective}" if x.effective else "") + ".")
+            c = cand(x.name, x.url, no.split("-")[0], f"{x.ministry or ''}고시 제{x.notice_no}호")
+            return "verified", notes, [], c
+        if items and not hit:
+            notes.append(f"제{no}호 규칙은 있으나 인용한 부처와 맞는 것이 없습니다.")
+
+    # 2) 법령 이름으로 확인
+    name = _law_name(ref.raw)
+    if name:
+        try:
+            title = await lawgo.law_exists(client, name)
+        except httpx.HTTPError:
+            title = None
+        if title:
+            notes.append(f"국가법령정보센터에서 확인했습니다. 현행 법령 '{title}'.")
+            url = "https://www.law.go.kr/%EB%B2%95%EB%A0%B9/" + quote(re.sub(r"\s+", "", name))
+            return "verified", notes, [], cand(title, url, ref.year, "국가법령정보센터")
+        # 3) 국문 규칙명으로 행정규칙 검색
+        try:
+            items = await lawgo.search_admrul(client, name)
+        except httpx.HTTPError:
+            items = []
+        best, bs = None, 0.0
+        for x in items:
+            sc = fuzz.ratio(norm_for_match(x.name).replace(" ", ""),
+                            norm_for_match(name).replace(" ", ""))
+            if sc > bs:
+                best, bs = x, sc
+        if best is not None and bs >= 85:
+            notes.append(f"국가법령정보센터에서 확인했습니다. {best.ministry or ''} '{best.name}'"
+                         + (f" 제{best.notice_no}호" if best.notice_no else "") + ".")
+            return "verified", notes, [], cand(
+                best.name, best.url, (best.notice_no or "").split("-")[0] or ref.year,
+                f"{best.ministry or ''} 행정규칙")
+
+    notes.append("국가법령정보센터에서 이 법령·고시를 찾지 못했습니다. "
+                 "폐지되었거나 인용 표기가 정확하지 않을 수 있습니다.")
+    return "unverified", notes, ["직접 확인 필요"], None
 
 
 def build_links(ref: ParsedRef, best: Optional[Candidate], status: str) -> list[dict]:
@@ -758,10 +841,26 @@ async def check_one(client: httpx.AsyncClient, ref: ParsedRef, opts: Options) ->
     sources: list[str] = []
 
     if ref.kind == "law":
-        return RefResult(ref.to_dict(), "skipped", STATUS_LABEL["skipped"], KIND_LABEL["law"], None, [],
-                         build_links(ref, None, "skipped"),
-                         "법령·고시는 서지 DB 대상이 아니어서 자동 확인하지 않습니다. 국가법령정보센터에서 조문과 시행일을 직접 확인하세요.",
-                         round(time.time() - t0, 2), ["직접 확인 필요"], [])
+        # 법령·고시는 서지 DB(Crossref/RISS)에 없다. 국가법령정보센터에서 따로 찾는다.
+        try:
+            status, notes, flags, best = await check_law(client, ref)
+        except Exception as e:  # noqa: BLE001
+            status, notes, flags, best = "unverified", [f"국가법령정보센터 조회 실패({type(e).__name__})"], ["직접 확인 필요"], None
+            _unavailable["lawgo"] = "국가법령정보센터에 접속하지 못했습니다"
+        links = build_links(ref, best, status)
+        if best is not None and best.url:
+            links.insert(0, {"label": "국가법령정보센터 원문", "url": best.url, "kind": "primary"})
+            seen, uniq = set(), []
+            for l in links:
+                if l["url"] not in seen:
+                    seen.add(l["url"]); uniq.append(l)
+            links = uniq
+        if status == "verified":
+            notes.append("조문 번호와 시행일은 심사자가 원문에서 한 번 더 확인하세요.")
+        return RefResult(ref.to_dict(), status, STATUS_LABEL[status], KIND_LABEL["law"],
+                         best.to_dict() if best else None, [best.to_dict()] if best else [],
+                         links, " ".join(notes), round(time.time() - t0, 2), flags,
+                         ["국가법령정보센터"])
 
     if ref.kind == "web" and ref.url and not ref.doi:
         if not opts.check_urls:
@@ -986,6 +1085,24 @@ async def verify_all(raw_refs: list[str], opts: Options,
                 if on_result:
                     on_result(i, res)
         await asyncio.gather(*(run(i, r) for i, r in enumerate(refs)))
+
+        # 국내 학술논문·학위논문인데 못 찾은 것은 RISS 가 한꺼번에 몰린 요청에 빈 응답을
+        # 준 탓일 수 있다(개별로 다시 물으면 대개 찾힌다). 잠시 쉬었다 하나씩만 다시 본다.
+        again = [i for i, r in enumerate(results)
+                 if r is not None and r.status == "unverified"
+                 and refs[i].kind in ("article", "thesis") and _korea_related(refs[i])]
+        if again:
+            await asyncio.sleep(2.0)
+            for i in again[:12]:
+                try:
+                    res = await check_one(client, refs[i], opts)
+                except Exception:      # noqa: BLE001
+                    continue
+                if res.status != "unverified":
+                    results[i] = res
+                    if on_result:
+                        on_result(i, res)
+
     out = [r for r in results if r is not None]
     _mark_duplicates(out)
     return out

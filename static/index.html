@@ -201,7 +201,7 @@ footer div+div{margin-top:6px}
         <svg class="logo" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="6" y="6" width="244" height="244" rx="54" fill="#1d4ed8"/><path d="M66 44h84l42 42v128H66z" fill="#fff"/><path d="M150 44v42h42z" fill="#c7dbff"/><g fill="#dbe6fb"><rect x="86" y="108" width="86" height="8" rx="4"/><rect x="86" y="130" width="70" height="8" rx="4"/><rect x="86" y="152" width="86" height="8" rx="4"/><rect x="86" y="174" width="70" height="8" rx="4"/></g><circle cx="186" cy="190" r="46" fill="#136c3a" stroke="#fff" stroke-width="8"/><path d="M166 190l15 16 27-33" fill="none" stroke="#fff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <div>
           <h1>참고문헌 실존 확인 <span class="ver" id="ver"></span></h1>
-          <p>논문의 참고문헌이 실제로 존재하는 문헌인지 Crossref · RISS · 안전보건공단 · OpenAlex에서 확인하고, 원문 링크와 APA 정렬 목록을 만들어 드립니다.</p>
+          <p>논문의 참고문헌이 실제로 존재하는 문헌인지 Crossref · RISS · 안전보건공단 · 국가법령정보센터 · OpenAlex에서 확인하고, 원문 링크와 APA 정렬 목록을 만들어 드립니다.</p>
         </div>
       </div>
       <button class="quit" id="quitBtn" title="프로그램을 끝냅니다">프로그램 종료</button>
@@ -335,7 +335,7 @@ footer div+div{margin-top:6px}
     <div><b>판정 읽는 법</b> · <span class="badge b-verified">확인됨</span> 제목이 거의 같고 연도가 맞으며 저자나 게재지가 뒷받침됨 &nbsp; <span class="badge b-likely">검토 필요</span> 후보는 있으나 연도·저자·게재지 중 어긋난 것이 있음 &nbsp; <span class="badge b-unverified">확인 불가</span> 조회한 곳에서 일치 항목을 찾지 못함 &nbsp; <span class="badge b-skipped">검증 제외</span> 법령 등 서지 DB 대상이 아님</div>
     <div><b>심사에 쓸 때</b> · ‘확인됨’이 아닌 항목은 모두 사람이 직접 봐야 합니다. ‘확인 불가’가 곧 허위라는 뜻은 아닙니다. 단행본·기관보고서·학술대회 발표문·오래된 국내 문헌은 DB 수록률이 낮습니다. 표의 검색 링크로 확인하세요.</div>
     <div><b>주의 표시</b> · ‘DOI 제목 불일치’와 ‘DOI 없음’은 지어낸 문헌에서 자주 나타납니다. ‘연도 불일치’는 재발행본을 인용했거나 연도를 잘못 적은 경우입니다. ‘중복 기재’는 같은 문헌이 목록에 두 번 이상 올라온 경우입니다.</div>
-    <div>이 프로그램은 Crossref·OpenAlex·RISS 공개 정보만 조회하며 API 키나 계정이 필요 없습니다. ‘확인됨’이어도 권호와 페이지까지 맞는지는 원문에서 보셔야 합니다.</div>
+    <div>이 프로그램은 Crossref·OpenAlex·RISS·국가법령정보센터 공개 정보만 조회하며 API 키나 계정이 필요 없습니다. ‘확인됨’이어도 권호와 페이지까지 맞는지는 원문에서 보셔야 합니다.</div>
   </footer>
 </div>
 
@@ -344,7 +344,8 @@ const $ = s => document.querySelector(s);
 let sourceName = '', jobId = null, pollTimer = null, filter = 'all', results = [], total = 0;
 
 const METHOD = {numbered:'번호 목록', indent:'들여쓰기(PDF 좌표)', heuristic:'문장 패턴', paragraph:'문단 단위', paste:'붙여넣기'};
-const SRC = {crossref:'Crossref', openalex:'OpenAlex', riss:'RISS', doi:'DOI'};
+const SRC = {crossref:'Crossref', openalex:'OpenAlex', riss:'RISS', doi:'DOI',
+             kosha:'안전보건공단', lawgo:'국가법령정보센터'};
 
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function showError(msg){ const e = $('#inputError'); e.textContent = msg; e.classList.remove('hidden'); }
@@ -483,7 +484,7 @@ function render(j){
     el.className = 'sumbar' + (need === 0 ? ' clean' : '');
     const un = j.unavailable || {};
     const unTxt = Object.keys(un).length
-      ? `<br><span class="muted">${esc(Object.entries(un).map(([k, v]) => `${k}: ${v}`).join(' · '))} — 나머지 조회처로만 판정했습니다.</span>`
+      ? `<br><span class="muted">${esc(Object.entries(un).map(([k, v]) => `${SRC[k] || k}: ${v}`).join(' · '))} — 나머지 조회처로만 판정했습니다.</span>`
       : '';
     el.innerHTML = (need === 0
       ? `전체 <b>${total}</b>건이 모두 확인되었습니다.` + (extra.length ? ' ' + extra.join(' · ') : '')
@@ -732,7 +733,8 @@ function rowHtml(r){
     if (b.authors && b.authors.length) info.push(esc(b.authors.slice(0, 3).join(', ')) + (b.authors.length > 3 ? ' 외' : ''));
     if (b.year) info.push(b.year);
     if (b.container) info.push(esc(b.container));
-    const tag = [`${SRC[b.source] || b.source}`, `유사도 ${Math.round(b.title_sim)}%`];
+    const tag = [`${SRC[b.source] || b.source}`];
+    if (b.source !== 'lawgo') tag.push(`유사도 ${Math.round(b.title_sim)}%`);
     if (b.extra && b.extra.kci) tag.push(esc(b.extra.kci));
     if (b.extra && (b.extra.fulltext || b.extra.riss_fulltext)) tag.push({free:'RISS 원문 무료', paid:'RISS 원문 유료', yes:'RISS 원문 있음'}[b.extra.fulltext || b.extra.riss_fulltext] || '');
     bestHtml = `${t}<div class="sub">${info.join(' · ')}</div><div class="sub">${tag.filter(Boolean).join(' · ')}</div>`;

@@ -44,7 +44,9 @@ exe = EXE(
     strip=False,
     upx=False,
     runtime_tmpdir=None,
-    console=True,
+    # 검은 명령창을 띄우지 않는다. 대신 화면의 '프로그램 종료' 단추로 끝내고,
+    # 브라우저가 15분간 소식이 없으면 스스로 종료한다(app.py 의 _idle_watch).
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

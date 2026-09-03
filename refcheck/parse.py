@@ -19,8 +19,14 @@ VOL_RE = re.compile(
     re.I,
 )
 THESIS_RE = re.compile(r"학위\s*논문|석사|박사|dissertation|thesis|Ph\.?\s?D|Master['’]?s|Doctoral|대학원", re.I)
+# 발령번호(고시 제2023-19호). '19호' 가 권·호로도 읽히므로 법령 판정을 권·호보다 먼저 본다.
+NOTICE_NO_RE = re.compile(
+    r"(?:고시|훈령|예규|지침|공고|규정)\s*제?\s*(?:19|20)\d{2}\s*[-–]\s*\d{1,4}\s*호|"
+    r"제\s*(?:19|20)\d{2}\s*[-–]\s*\d{1,4}\s*호")
 LAW_RE = re.compile(
     r"(?:법률|시행령|시행규칙|고시|훈령|예규|조례|규칙)\b|법\s*제\s*\d+\s*조|제\s*\d+\s*조|국가법령정보센터|법제처|"
+    # '…에 관한 특별법', '…기본법' 처럼 이름만으로 법률인 것
+    r"[가-힣]{2,20}에\s*관한\s*(?:특별)?법(?:률)?(?![가-힣])|[가-힣]{2,20}(?:특별법|기본법)(?![가-힣])|"
     r"(?:산업안전보건법|근로기준법|중대재해\s*처벌\s*등에\s*관한\s*법률|중대재해처벌법)|\bAct\b(?!\w)|\bRegulation\b|\bDirective\b|"
     # 영문으로 인용된 정부 고시·지침 (예: Ministry of Employment and Labor (2020). Guidelines ... [2020-53])
     r"Ministry\s+of\s+[A-Za-z\s]{3,40}\s*\(\s*(?:19|20)\d{2}\s*\)[^.]{0,120}?\b(?:Guidelines?|Notice|Public\s+Notice)\b|"
@@ -246,6 +252,9 @@ def classify(masked: str, doi: Optional[str], url: Optional[str]) -> str:
         return "thesis"
     if THESIS_RE.search(masked) and not VOL_RE.search(masked):
         return "thesis"
+    # 발령번호가 있으면 권·호처럼 보여도 법령·행정규칙이다
+    if NOTICE_NO_RE.search(masked) and not doi:
+        return "law"
     if LAW_RE.search(masked) and not VOL_RE.search(masked) and not doi:
         return "law"
     if url and not doi and (WEB_RE.search(masked) or not YEAR_ANY_RE.search(masked) or not VOL_RE.search(masked)):

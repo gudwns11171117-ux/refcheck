@@ -12,7 +12,7 @@ import subprocess
 import sys
 import zipfile
 
-VERSION = "1.8"
+VERSION = "1.9"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(ROOT, "dist")
 OUT = os.path.join(ROOT, "배포")
@@ -29,8 +29,10 @@ AI가 지어낸 가짜 참고문헌이나 연도·저자 오기를 걸러내는 
 [ 실행 방법 ]
 
   "참고문헌 실존 확인.exe" 를 더블클릭하세요.
-  검은 창이 뜨고 잠시 뒤 웹브라우저가 자동으로 열립니다.
-  끝낼 때는 검은 창을 닫으면 됩니다.
+  잠시 뒤 웹브라우저가 자동으로 열립니다. 검은 명령창은 뜨지 않습니다.
+
+  끝낼 때는 화면 오른쪽 위의 [프로그램 종료] 를 누르세요.
+  브라우저만 닫고 잊으셔도, 15분 뒤 프로그램이 스스로 끝납니다.
 
   설치 과정은 없습니다. 이 파일 하나만 있으면 되고, USB에 담아 다녀도 됩니다.
 

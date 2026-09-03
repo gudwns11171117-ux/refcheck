@@ -26,6 +26,15 @@ from pydantic import BaseModel
 
 if not getattr(sys, "frozen", False):
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# 검은 창 없이(windowed) 실행하면 표준 출력이 없어 print 한 줄에 프로그램이 죽는다.
+# 빈 곳으로 흘려보낸다.
+if sys.stdout is None or sys.stderr is None:
+    _null = open(os.devnull, "w", encoding="utf-8")
+    if sys.stdout is None:
+        sys.stdout = _null
+    if sys.stderr is None:
+        sys.stderr = _null
 from refcheck.export import to_xlsx                       # noqa: E402
 from refcheck.extract import extract_references, split_pasted_text   # noqa: E402
 from refcheck.parse import parse_reference                # noqa: E402
@@ -149,8 +158,11 @@ async def api_verify(inp: VerifyIn):
     JOBS[job_id] = job
 
     def cb(i, res):
+        # 못 찾은 국내 문헌은 마지막에 한 번 더 확인하므로 같은 번호가 두 번 올 수 있다.
+        first = job["results"][i] is None
         job["results"][i] = res.to_dict()
-        job["done"] += 1
+        if first:
+            job["done"] += 1
 
     async def run():
         try:
@@ -254,12 +266,25 @@ def main() -> int:
         threading.Thread(target=_open_browser, args=(port,), daemon=True).start()
     # 한글 콘솔(CP949)에서 인코딩 오류가 나지 않도록 특수문자는 쓰지 않는다
     print()
-    print(f"  참고문헌 실존 확인 툴이 실행 중입니다.")
+    print("  참고문헌 실존 확인 툴이 실행 중입니다.")
     print(f"  브라우저에서 열린 주소 : http://127.0.0.1:{port}")
-    print(f"  끝낼 때는 이 창을 닫으세요.")
+    print("  끝낼 때는 화면 오른쪽 위 '프로그램 종료'를 누르세요.")
     print()
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
     return 0
+
+
+def _alert(text: str, title: str = "참고문헌 실존 확인") -> None:
+    """검은 창 없이 도는 프로그램이라 오류를 알릴 곳이 없다. 윈도우 메시지 창으로 띄운다."""
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(None, text, title, 0x10)   # MB_ICONERROR
+    except Exception:  # noqa: BLE001
+        try:
+            print(text)
+            input()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 if __name__ == "__main__":
@@ -267,13 +292,8 @@ if __name__ == "__main__":
         sys.exit(main())
     except KeyboardInterrupt:
         sys.exit(0)
-    except Exception as e:  # noqa: BLE001 - exe 로 실행 시 창이 즉시 닫히지 않게 한다
+    except Exception as e:  # noqa: BLE001
         import traceback
         traceback.print_exc()
-        print()
-        print(f"  [오류] 프로그램을 시작하지 못했습니다: {type(e).__name__}: {e}")
-        try:
-            input("  엔터를 누르면 창이 닫힙니다. ")
-        except EOFError:
-            pass
+        _alert(f"프로그램을 시작하지 못했습니다.\n\n{type(e).__name__}: {e}")
         sys.exit(1)

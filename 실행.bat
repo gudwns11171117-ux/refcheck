@@ -20,7 +20,7 @@ if errorlevel 1 goto err
 echo.
 echo  참고문헌 실존 확인 툴을 시작합니다.
 echo  잠시 후 브라우저가 열립니다.  주소: http://127.0.0.1:8765
-echo  끝낼 때는 이 창을 닫으세요.
+echo  끝낼 때는 화면의 '프로그램 종료' 를 누르세요.
 echo.
 ".venv\Scripts\python.exe" app.py
 if errorlevel 1 goto err
