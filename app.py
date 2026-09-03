@@ -36,6 +36,7 @@ STATIC = resource_path("static")
 DEFAULT_PORT = int(os.environ.get("REFCHECK_PORT", "8765"))
 MAX_UPLOAD = 60 * 1024 * 1024
 PING_TOKEN = "refcheck-local"
+VERSION = "1.4"          # 화면 오른쪽 위에 표시된다. build_dist.py 의 VERSION 과 맞춘다
 
 app = FastAPI(title="참고문헌 실존 확인", docs_url=None, redoc_url=None)
 JOBS: dict[str, dict] = {}
@@ -63,7 +64,7 @@ async def index():
 @app.get("/api/ping")
 async def api_ping():
     """이미 떠 있는 우리 서버인지 구별하는 표식(중복 실행 방지용)."""
-    return {"app": PING_TOKEN}
+    return {"app": PING_TOKEN, "version": VERSION}
 
 
 def _pack_refs(raw_refs: list[str]) -> list[dict]:

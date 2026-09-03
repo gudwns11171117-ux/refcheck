@@ -11,6 +11,7 @@
 body{margin:0;background:var(--bg);color:var(--text);font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.5}
 .wrap{max-width:1200px;margin:0 auto;padding:28px 20px 60px}
 header h1{font-size:22px;margin:0 0 4px}
+.ver{font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-bg);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:4px}
 header p{margin:0;color:var(--muted)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:16px}
 .card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
@@ -76,6 +77,16 @@ details#keyBox summary{cursor:pointer;color:var(--accent);width:fit-content}
 details#keyBox .keybody{border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-top:8px;background:#fbfcfe}
 details#keyBox p{margin:0 0 8px;line-height:1.6}
 input[type=password]{border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;width:340px;max-width:100%}
+.overlay{position:fixed;inset:0;background:rgba(31,35,40,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
+.dialog{background:#fff;border-radius:12px;padding:22px 24px;max-width:560px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.dialog h3{margin:0 0 6px;font-size:16px}
+.dialog p{margin:0 0 14px}
+#fmtOpts{display:flex;gap:8px;flex-wrap:wrap}
+#fmtOpts label{border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:6px}
+#fmtOpts label.on{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);font-weight:600}
+#fmtOpts input{margin:0}
+.fmtPreview{margin-top:14px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:#f6f8fa;
+            font-size:12.5px;line-height:1.8;color:var(--muted);white-space:pre-wrap;word-break:break-word;max-height:150px;overflow:auto}
 .hidden{display:none}
 .best-title{font-weight:600;word-break:break-word}
 footer{margin-top:28px;color:var(--muted);font-size:12px;line-height:1.7}
@@ -86,7 +97,7 @@ footer{margin-top:28px;color:var(--muted);font-size:12px;line-height:1.7}
 <body>
 <div class="wrap">
   <header>
-    <h1>참고문헌 실존 확인</h1>
+    <h1>참고문헌 실존 확인 <span class="ver" id="ver"></span></h1>
     <p>논문 파일을 넣으면 마지막 참고문헌 목록을 읽어, 각 문헌이 실제로 존재하는지 Crossref·OpenAlex·RISS에서 확인하고 원문으로 가는 링크를 붙여 드립니다.</p>
   </header>
 
@@ -197,6 +208,20 @@ footer{margin-top:28px;color:var(--muted);font-size:12px;line-height:1.7}
     </div>
     <div id="apaList" class="apalist"></div>
   </section>
+
+  <!-- 복사 직전에 번호 형식을 고르는 창 -->
+  <div class="overlay hidden" id="fmtOverlay">
+    <div class="dialog">
+      <h3>번호를 어떻게 붙일까요?</h3>
+      <p class="muted">학교나 학회마다 다릅니다. 고르시면 미리보기가 바뀝니다.</p>
+      <div id="fmtOpts"></div>
+      <div class="fmtPreview" id="fmtPreview"></div>
+      <div class="row" style="justify-content:flex-end;margin-top:14px">
+        <button class="btn secondary" id="fmtCancel">취소</button>
+        <button class="btn" id="fmtGo">이 형식으로 복사</button>
+      </div>
+    </div>
+  </div>
 
   <footer>
     <div><b>판정 읽는 법</b> · <span class="badge b-verified">확인됨</span> 제목이 거의 같고 연도가 맞으며 저자나 게재지가 뒷받침됨 &nbsp; <span class="badge b-likely">검토 필요</span> 후보는 있으나 연도·저자·게재지 중 어긋난 것이 있음 &nbsp; <span class="badge b-unverified">확인 불가</span> 조회한 곳에서 일치 항목을 찾지 못함 &nbsp; <span class="badge b-skipped">검증 제외</span> 법령 등 서지 DB 대상이 아님</div>
@@ -363,6 +388,11 @@ function render(j){
   $('#tbody').innerHTML = rows.map(rowHtml).join('') || `<tr><td colspan="6" class="muted">해당 항목이 없습니다.</td></tr>`;
 }
 
+// 화면과 프로그램 버전이 어긋나 옛 화면을 보고 있는지 한눈에 알 수 있게 표시한다
+fetch('/api/ping').then(r => r.json()).then(d => {
+  if (d.version) $('#ver').textContent = 'v' + d.version;
+}).catch(() => {});
+
 // ---- OpenAlex 키 (이 브라우저에만 저장한다. 서버는 조회할 때만 쓰고 저장하지 않는다)
 const KEY_STORE = 'refcheck.openalex_key';
 function loadKey(){ try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
@@ -502,6 +532,35 @@ function apaHtml(){
   return `<div style="font-family:'Malgun Gothic',serif;font-size:11pt;line-height:1.8">${[...ko, ...en].map(p).join('')}</div>`;
 }
 
+// ---- 복사 직전 번호 형식 고르기
+const FMT = [['none', '번호 없음'], ['paren', '(1)'], ['bracket', '[1]'], ['dot', '1.'], ['rparen', '1)']];
+let pendingRich = true;
+
+function fmtRender(){
+  const cur = $('#apaNum').value;
+  $('#fmtOpts').innerHTML = FMT.map(([v, l]) =>
+    `<label class="${v === cur ? 'on' : ''}"><input type="radio" name="fmt" value="${v}" ${v === cur ? 'checked' : ''}>${esc(l)}</label>`).join('');
+  document.querySelectorAll('#fmtOpts input').forEach(r => r.onchange = () => {
+    $('#apaNum').value = r.value;
+    renderApa();
+    fmtRender();
+  });
+  const lines = apaPlain().split('\n');
+  $('#fmtPreview').textContent = lines.slice(0, 3).join('\n') + (lines.length > 3 ? `\n… 모두 ${lines.length}건` : '');
+}
+
+function openFmt(rich){
+  if (!results.length) return;
+  pendingRich = rich;
+  fmtRender();
+  $('#fmtOverlay').classList.remove('hidden');
+}
+function closeFmt(){ $('#fmtOverlay').classList.add('hidden'); }
+$('#fmtCancel').onclick = closeFmt;
+$('#fmtOverlay').onclick = e => { if (e.target.id === 'fmtOverlay') closeFmt(); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFmt(); });
+$('#fmtGo').onclick = () => { closeFmt(); copyApa(pendingRich); };
+
 async function copyApa(rich){
   const msg = $('#apaMsg');
   try {
@@ -526,8 +585,8 @@ async function copyApa(rich){
 }
 
 ['#apaNum', '#apaOnlyOk', '#apaFix', '#apaHang'].forEach(s => $(s).addEventListener('change', renderApa));
-$('#apaCopy').onclick = () => copyApa(true);
-$('#apaCopyText').onclick = () => copyApa(false);
+$('#apaCopy').onclick = () => openFmt(true);
+$('#apaCopyText').onclick = () => openFmt(false);
 
 function rowHtml(r){
   const ref = r.ref, b = r.best;
