@@ -12,7 +12,7 @@ import subprocess
 import sys
 import zipfile
 
-VERSION = "1.7"
+VERSION = "1.8"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(ROOT, "dist")
 OUT = os.path.join(ROOT, "배포")
