@@ -142,7 +142,7 @@ def _sim(ref: ParsedRef, c: Candidate) -> float:
             # 길이가 엇비슷할 때만 인정한다.
             s = max(fuzz.token_sort_ratio(rt, ct), fuzz.ratio(rt, ct))
             ratio_len = len(ct) / max(1, len(rt))
-            if 0.8 <= ratio_len <= 1.25:
+            if 0.85 <= ratio_len <= 1.18:
                 s = max(s, fuzz.token_set_ratio(rt, ct))
         # 제목 추출이 어긋났을 때를 대비해 원문 전체와도 대본다.
         # 다만 후보 제목이 참고문헌 제목의 일부만 덮어도 높게 나오므로 길이 조건을 빡빡하게 둔다.
@@ -168,14 +168,26 @@ def score_candidate(ref: ParsedRef, c: Candidate) -> None:
         if fa and same_script:
             names = " ".join(norm_for_match(a) for a in same_script)
             c.author_ok = fa in names or any(fa in norm_for_match(a) for a in same_script)
+        elif detect_lang(ref.first_author) != "ko":
+            # "Kim" 과 "김병석" 처럼 표기 체계가 다른 경우. 로마자 성을 한글 성으로 바꿔 견준다.
+            # 맞으면 확실한 근거지만, 안 맞는다고 '불일치'로 단정하지는 않는다.
+            # 로마자 표기는 사람마다 달라(이/Lee/Yi/Rhee) 대응표가 완전할 수 없기 때문이다.
+            surs = kosha.surname_candidates(ref.first_author)
+            ko_names = [a for a in c.authors if detect_lang(a) == "ko"]
+            if surs and ko_names and any(a.lstrip("(").startswith(s) for a in ko_names for s in surs):
+                c.author_ok = True
     if ref.container and c.container and detect_lang(ref.container) == detect_lang(c.container):
         a, b = norm_for_match(ref.container), norm_for_match(c.container)
         if a and b:
             c.container_ok = max(fuzz.token_set_ratio(a, b), fuzz.partial_ratio(a, b)) >= 80
     score = c.title_sim / 100 * 0.72
-    score += 0.15 if c.year_ok else (0.06 if c.year_ok is None else -0.12)
+    # 단행본은 판·쇄가 갈리며 발행연도가 흔히 달라진다. 연도 어긋남을 논문만큼 세게 벌하지 않는다.
+    year_penalty = -0.04 if ref.kind == "book" else -0.12
+    score += 0.15 if c.year_ok else (0.06 if c.year_ok is None else year_penalty)
     score += 0.10 if c.author_ok else (0.04 if c.author_ok is None else -0.08)
-    score += 0.05 if c.container_ok else (0.02 if c.container_ok is None else -0.02)
+    # 단행본은 출판사가 곧 신원이다. 출판사가 어긋나면 다른 책으로 볼 근거가 된다.
+    cont_penalty = -0.06 if ref.kind == "book" else -0.02
+    score += 0.05 if c.container_ok else (0.02 if c.container_ok is None else cont_penalty)
     c.score = round(max(0.0, min(1.0, score)), 3)
 
 
@@ -392,6 +404,9 @@ def _riss_cols(ref: ParsedRef) -> list[str]:
         return ["bib_m", "re_t"]
     if ref.kind == "report":
         return ["re_t", "re_a_kor", "bib_m"]
+    if ref.kind == "unknown":
+        # 무엇인지 못 가린 항목은 학술논문과 단행본을 모두 본다
+        return ["re_a_kor", "bib_m", "bib_t"] if _korea_related(ref) else ["re_a_over", "bib_m", "re_a_kor"]
     if ref.lang != "ko":
         return ["re_a_kor", "re_a_over"] if _korea_related(ref) else ["re_a_over", "re_a_kor"]
     return ["re_a_kor", "bib_t", "re_t"]
@@ -451,10 +466,19 @@ async def enrich_riss_titles(client, ref: ParsedRef, cands: list[Candidate], lim
 
 
 def _riss_cand(it: riss.RissItem) -> Candidate:
-    return Candidate("riss", it.title, it.authors, it.year, it.container or it.publisher, it.doi, it.detail_url,
-                     {"fulltext": it.fulltext, "kci": it.kci, "col": it.col,
-                      "col_label": riss.COLS.get(it.col, ""), "publisher": it.publisher,
-                      "volume": it.volume, "permalink": it.permalink, "detail_url": it.detail_url})
+    # RISS 는 "국문 제목 = English Title" 로 병기해 주는 경우가 있다.
+    # 통째로 두면 국문 부분이 섞여 유사도가 깎이므로 나눠서 각각 견준다.
+    title, alts = it.title, []
+    if " = " in it.title:
+        parts = [p.strip() for p in it.title.split(" = ") if p.strip()]
+        if len(parts) > 1:
+            title, alts = parts[0], parts[1:]
+    c = Candidate("riss", title, it.authors, it.year, it.container or it.publisher, it.doi, it.detail_url,
+                  {"fulltext": it.fulltext, "kci": it.kci, "col": it.col,
+                   "col_label": riss.COLS.get(it.col, ""), "publisher": it.publisher,
+                   "volume": it.volume, "permalink": it.permalink, "detail_url": it.detail_url})
+    c.alt_titles = alts
+    return c
 
 
 async def riss_lookup(client, ref: ParsedRef, exhaustive: bool) -> list[Candidate]:
@@ -586,11 +610,20 @@ def build_links(ref: ParsedRef, best: Optional[Candidate], status: str) -> list[
             links.append({"label": "RISS에서 검색", "url": riss.search_url(q, col), "kind": "secondary"})
     else:
         if ref.kind == "law":
-            name = _law_name(ref.raw) or q
-            links.append({"label": "국가법령정보센터", "url": "https://www.law.go.kr/법령/" + quote(name), "kind": "primary"})
-            links.append({"label": "법령 검색",
-                          "url": "https://www.law.go.kr/lsSc.do?menuId=1&subMenuId=15&tabMenuId=81&query=" + quote(name),
-                          "kind": "secondary"})
+            name = _law_name(ref.raw)
+            if name:
+                links.append({"label": "국가법령정보센터", "url": "https://www.law.go.kr/법령/" + quote(name), "kind": "primary"})
+                links.append({"label": "법령 검색",
+                              "url": "https://www.law.go.kr/lsSc.do?menuId=1&subMenuId=15&tabMenuId=81&query=" + quote(name),
+                              "kind": "secondary"})
+            else:
+                # 영문으로 인용된 고시·지침. 국문 규칙명을 알 수 없어 본문 검색과 웹 검색으로 보낸다.
+                links.append({"label": "국가법령정보센터에서 찾기",
+                              "url": "https://www.law.go.kr/LSW/admRulSc.do?menuId=5&subMenuId=41&query=" + quote(q),
+                              "kind": "primary"})
+                links.append({"label": "웹에서 찾기(권장)",
+                              "url": "https://www.google.com/search?q=" + quote(ref.raw[:180]),
+                              "kind": "primary"})
         else:
             col = {"thesis": "bib_t", "book": "bib_m", "report": "re_t"}.get(
                 ref.kind, "re_a_kor" if _korea_related(ref) else "re_a_over")
@@ -756,7 +789,13 @@ async def check_one(client: httpx.AsyncClient, ref: ParsedRef, opts: Options) ->
         flags.append("DOI 없음")
         notes.append("기재된 DOI를 Crossref에서 찾을 수 없습니다")
 
-    ranked = sorted(pool.values(), key=lambda c: -c.score)
+    # 국내에서 나온 문헌을 영문으로 인용하면, 해외 DB에 흔한 영어 낱말이 겹쳐 엉뚱한 책·논문이
+    # 더 높게 나오곤 한다. 저자까지 맞은 국내 DB(RISS·공단) 후보를 조금 앞세운다.
+    def _rank(c: Candidate) -> float:
+        home = 0.06 if (c.source in ("riss", "kosha") and c.author_ok and _korea_related(ref)) else 0.0
+        return -(c.score + home)
+
+    ranked = sorted(pool.values(), key=_rank)
     best = ranked[0] if ranked else None
     status, dec_flags, show_best = decide(best, opts.strict, doi_confirmed)
     # 근거가 약한 후보를 '확인된 서지'로 보여 주면 심사자를 오도한다

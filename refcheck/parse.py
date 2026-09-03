@@ -33,7 +33,7 @@ REPORT_RE = re.compile(
     re.I,
 )
 BOOK_RE = re.compile(
-    r"(?:Press|Publishing|Publishers|Wiley|Springer|Elsevier|Routledge|Sage|McGraw-Hill|Pearson|Prentice\s*Hall)\b|"
+    r"(?:Press|Publish(?:ing|ers|er)|Wiley|Springer|Elsevier|Routledge|Sage|McGraw-Hill|Pearson|Prentice\s*Hall)\b|"
     r"출판사|출판부|출판|(?:서울|부산|파주|경기)\s*[:：]|\d+(?:st|nd|rd|th)\s+ed\.?|\bed\.\)|\bEds?\.|제\s*\d+\s*판|개정판|증보판|(?:^|\s)In\s+[A-Z]|"
     r"[A-Z][a-z]+(?:\s[A-Z][a-z]+)?\s*:\s*[A-Z][A-Za-z&\.\s\-]+\.?\s*$",      # 끝부분의 "New York: McGraw-Hill."
     re.I,
