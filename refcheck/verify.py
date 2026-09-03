@@ -18,7 +18,7 @@ import httpx
 from rapidfuzz import fuzz
 
 from . import cache, riss
-from .parse import (KOREA_HINT_RE, ParsedRef, norm_for_match, parse_reference)
+from .parse import (KOREA_HINT_RE, ParsedRef, detect_lang, norm_for_match, parse_reference)
 
 UA = "RefCheck/1.0 (local reference verification tool)"
 API_HEADERS = {"User-Agent": UA, "Accept": "application/json"}
@@ -41,9 +41,14 @@ class LookupFailed(Exception):
 # (OpenAlex 는 무료 일일 한도가 있어 소진되면 429 와 함께 budget 안내를 준다.)
 _unavailable: dict[str, str] = {}
 
+# 캐시를 건너뛰고 처음부터 다시 조회할지. 결과가 미심쩍을 때 쓴다.
+_bypass_cache = False
 
-def reset_sources() -> None:
+
+def reset_sources(bypass_cache: bool = False) -> None:
+    global _bypass_cache
     _unavailable.clear()
+    _bypass_cache = bypass_cache
 
 
 def unavailable_sources() -> dict[str, str]:
@@ -117,6 +122,7 @@ class Options:
     strict: bool = True           # 엄격 판정을 기본으로
     exhaustive: bool = True       # 확실한 일치가 없으면 컬렉션·질의를 넓혀 계속 찾는다
     openalex_key: str = ""        # 무료 키를 넣으면 OpenAlex 하루 한도가 10배($0.1 -> $1)
+    fresh: bool = False           # 캐시를 무시하고 처음부터 다시 조회한다
 
 
 # ---------------------------------------------------------------- 점수
@@ -130,15 +136,21 @@ def _sim(ref: ParsedRef, c: Candidate) -> float:
         s = 0.0
         rt = norm_for_match(ref.title) if ref.title else ""
         if rt:
-            s = max(fuzz.token_set_ratio(rt, ct), fuzz.ratio(rt, ct))
-            # 길이가 크게 다르면 token_set_ratio 가 과대평가되므로 억제한다
-            if len(ct) < 0.6 * len(rt) or len(rt) < 0.6 * len(ct):
-                s = min(s, fuzz.ratio(rt, ct) + 15)
+            # token_sort 는 빠지거나 남는 단어를 그대로 벌점으로 반영한다.
+            # token_set 은 한쪽이 다른 쪽의 부분집합이기만 해도 만점을 주므로
+            # ("Seismic Risk Assessment in Workplaces" vs "Guidelines for Risk Assessment in Workplaces")
+            # 길이가 엇비슷할 때만 인정한다.
+            s = max(fuzz.token_sort_ratio(rt, ct), fuzz.ratio(rt, ct))
+            ratio_len = len(ct) / max(1, len(rt))
+            if 0.8 <= ratio_len <= 1.25:
+                s = max(s, fuzz.token_set_ratio(rt, ct))
         # 제목 추출이 어긋났을 때를 대비해 원문 전체와도 대본다.
-        # 짧은 후보 제목이 우연히 걸리지 않도록 길이 조건을 둔다.
-        min_len = max(20, int(0.6 * len(rt))) if rt else 24
+        # 다만 후보 제목이 참고문헌 제목의 일부만 덮어도 높게 나오므로 길이 조건을 빡빡하게 둔다.
+        # ("Seismic Risk Assessment in Workplaces" 가 "Guidelines for Risk Assessment in Workplaces"
+        #  와 겹쳐 높은 점수를 받던 문제)
+        min_len = max(24, int(0.75 * len(rt))) if rt else 26
         if len(ct) >= min_len and len(ct.split()) >= 3:
-            s = max(s, fuzz.partial_ratio(ct, raw_n) * 0.95)
+            s = max(s, fuzz.partial_ratio(ct, raw_n) * 0.9)
         best = max(best, s)
     return best
 
@@ -147,11 +159,16 @@ def score_candidate(ref: ParsedRef, c: Candidate) -> None:
     c.title_sim = round(_sim(ref, c), 1)
     if ref.year and c.year and str(c.year).isdigit():
         c.year_ok = abs(int(ref.year) - int(c.year)) <= 1
+    # 문자 체계가 다르면(예: "Choi" 와 "최현준", "Journal of ..." 과 "한국...학회논문집")
+    # 글자로는 견줄 수 없다. 이때 '불일치'라고 단정하면 실재하는 국내 문헌을 가짜처럼 만든다.
+    # 비교할 수 없다는 뜻으로 None(모름)을 남긴다.
     if ref.first_author and c.authors:
         fa = norm_for_match(ref.first_author)
-        names = " ".join(norm_for_match(a) for a in c.authors)
-        c.author_ok = bool(fa) and (fa in names or any(fa in norm_for_match(a) for a in c.authors))
-    if ref.container and c.container:
+        same_script = [a for a in c.authors if detect_lang(a) == detect_lang(ref.first_author)]
+        if fa and same_script:
+            names = " ".join(norm_for_match(a) for a in same_script)
+            c.author_ok = fa in names or any(fa in norm_for_match(a) for a in same_script)
+    if ref.container and c.container and detect_lang(ref.container) == detect_lang(c.container):
         a, b = norm_for_match(ref.container), norm_for_match(c.container)
         if a and b:
             c.container_ok = max(fuzz.token_set_ratio(a, b), fuzz.partial_ratio(a, b)) >= 80
@@ -191,16 +208,18 @@ def decide(best: Optional[Candidate], strict: bool, doi_confirmed: bool) -> tupl
         return "unverified", [], False
     if best.title_sim >= 70:
         return "likely", mismatch, True
-    return "unverified", mismatch if best.title_sim >= SHOW_FLOOR else [], best.title_sim >= SHOW_FLOOR
+    # '확인 불가'면 후보를 보여 주지 않는다. 남남인 논문을 '확인된 서지'로 띄우면 심사자를 오도한다.
+    return "unverified", [], False
 
 
 # ---------------------------------------------------------------- 외부 조회
 async def _get_json(client: httpx.AsyncClient, url: str, sem: asyncio.Semaphore, source: str = "") -> dict:
     """실패하면 LookupFailed 를 올린다. 조용히 빈 결과를 돌려주지 않는다."""
     key = "json:" + url
-    hit = cache.get(key)
-    if hit is not None:
-        return hit
+    if not _bypass_cache:
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
     if source and source in _unavailable:
         raise LookupFailed(f"{source} {_unavailable[source]}")
     last = ""
@@ -380,9 +399,10 @@ def _riss_cols(ref: ParsedRef) -> list[str]:
 
 async def riss_search_cached(client, q: str, col: str) -> list[riss.RissItem]:
     key = f"riss:{col}:{q}"
-    hit = cache.get(key)
-    if hit is not None:
-        return [riss.RissItem(**d) for d in hit]
+    if not _bypass_cache:
+        hit = cache.get(key)
+        if hit is not None:
+            return [riss.RissItem(**d) for d in hit]
     last = ""
     for attempt in range(2):
         try:
@@ -394,6 +414,40 @@ async def riss_search_cached(client, q: str, col: str) -> list[riss.RissItem]:
         cache.put(key, [i.to_dict() for i in items[:10]])
         return items[:10]
     raise LookupFailed("RISS " + last)
+
+
+async def riss_detail_cached(client, detail_url: str) -> dict:
+    key = "rissdetail:" + detail_url
+    if not _bypass_cache:
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
+    d = await riss.detail(client, detail_url)
+    cache.put(key, d)
+    return d
+
+
+async def enrich_riss_titles(client, ref: ParsedRef, cands: list[Candidate], limit: int = 3) -> None:
+    """RISS 검색 결과는 국문 제목만 준다. 영문으로 인용된 국내 문헌은 그대로는 대조가 안 되므로,
+    상세 페이지에 병기된 반대 언어 제목을 가져와 붙인 뒤 다시 채점한다."""
+    want = detect_lang(ref.title or ref.raw)
+    todo = [c for c in cands
+            if c.source == "riss" and c.extra.get("detail_url") and not c.extra.get("enriched")
+            and detect_lang(c.title) != want]
+    for c in todo[:limit]:
+        try:
+            d = await riss_detail_cached(client, c.extra["detail_url"])
+        except (httpx.HTTPError, LookupFailed):
+            continue
+        c.extra["enriched"] = True
+        alts = [a for a in (d.get("alt_titles") or []) if a]
+        if alts:
+            c.alt_titles = list(dict.fromkeys(list(c.alt_titles) + alts))
+            score_candidate(ref, c)
+        if d.get("permalink"):
+            c.extra["permalink"] = d["permalink"]
+        if d.get("doi") and not c.doi:
+            c.doi = d["doi"]
 
 
 def _riss_cand(it: riss.RissItem) -> Candidate:
@@ -425,6 +479,8 @@ async def riss_lookup(client, ref: ParsedRef, exhaustive: bool) -> list[Candidat
                 c = _riss_cand(it)
                 score_candidate(ref, c)
                 found[key] = c
+            # 국문 제목만 돌아온 경우 영문 제목을 채워 넣어야 제대로 견줄 수 있다
+            await enrich_riss_titles(client, ref, list(found.values()))
             if any(_is_strong(c) for c in found.values()):
                 return list(found.values())
         if qi == 0 and found and max(c.title_sim for c in found.values()) >= 80:
@@ -731,7 +787,7 @@ def _mark_duplicates(results: list[RefResult]) -> None:
 async def verify_all(raw_refs: list[str], opts: Options,
                      on_result: Optional[Callable[[int, RefResult], None]] = None,
                      concurrency: int = 6) -> list[RefResult]:
-    reset_sources()
+    reset_sources(bypass_cache=opts.fresh)
     refs = [parse_reference(i + 1, r) for i, r in enumerate(raw_refs)]
     results: list[Optional[RefResult]] = [None] * len(refs)
     sem = asyncio.Semaphore(concurrency)

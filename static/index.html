@@ -227,6 +227,7 @@ footer div+div{margin-top:5px}
       <label><input type="checkbox" id="optExhaustive" checked> <b>전수조사</b> <span class="muted">(일치가 없으면 RISS까지 넓혀 다시 찾음)</span></label>
       <label><input type="checkbox" id="optCheckUrls" checked> 웹 자료는 URL 접속 여부 확인</label>
       <label><input type="checkbox" id="optRissAll"> 처음부터 RISS도 함께 조회 <span class="muted">(더 느려짐)</span></label>
+      <label><input type="checkbox" id="optFresh"> 캐시 무시하고 새로 조회 <span class="muted">(결과가 미심쩍을 때)</span></label>
     </div>
     <details id="keyBox">
       <summary>OpenAlex 조회 한도 늘리기 <span class="muted">(선택. 안 넣어도 동작합니다)</span></summary>
@@ -399,7 +400,8 @@ $('#verifyBtn').onclick = async () => {
   const refs = $('#refText').value.split('\n').map(s => s.trim()).filter(Boolean);
   if (!refs.length) { alert('검증할 참고문헌이 없습니다.'); return; }
   const options = {riss_all: $('#optRissAll').checked, check_urls: $('#optCheckUrls').checked,
-                   strict: $('#optStrict').checked, exhaustive: $('#optExhaustive').checked};
+                   strict: $('#optStrict').checked, exhaustive: $('#optExhaustive').checked,
+                   fresh: $('#optFresh').checked};
   $('#verifyBtn').disabled = true;
   if (pollTimer) clearTimeout(pollTimer);
   const r = await fetch('/api/verify', {method:'POST', headers:{'Content-Type':'application/json'},

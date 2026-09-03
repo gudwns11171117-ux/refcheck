@@ -135,6 +135,19 @@ def parse_detail_html(html: str) -> dict:
     m = re.search(r'href="https?://(?:dx\.)?doi\.org/([^"\s]+)"', html)
     if m:
         out["doi"] = m.group(1)
+    # 상세 페이지 제목은 "국문 제목 = English Title" 형태로 병기된다.
+    # 검색 결과에는 국문만 나오므로, 영문으로 인용된 국내 문헌을 대조하려면 여기서 영문 제목을 얻어야 한다.
+    m = re.search(r'<h3 class="title">(.*?)</h3>', html, re.S)
+    if m:
+        t = re.sub(r"<[^>]+>", " ", m.group(1))
+        t = (t.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+             .replace("&quot;", '"').replace("&#034;", '"').replace("&#039;", "'").replace("&nbsp;", " "))
+        t = re.sub(r"\s+", " ", t).strip()
+        parts = [p.strip() for p in re.split(r"\s=\s", t) if p.strip()]
+        if parts:
+            out["title"] = parts[0]
+            if len(parts) > 1:
+                out["alt_titles"] = parts[1:]
     return out
 
 
