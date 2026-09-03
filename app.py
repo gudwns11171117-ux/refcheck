@@ -36,7 +36,7 @@ STATIC = resource_path("static")
 DEFAULT_PORT = int(os.environ.get("REFCHECK_PORT", "8765"))
 MAX_UPLOAD = 60 * 1024 * 1024
 PING_TOKEN = "refcheck-local"
-VERSION = "1.6"          # 화면 오른쪽 위에 표시된다. build_dist.py 의 VERSION 과 맞춘다
+VERSION = "1.7"          # 화면 오른쪽 위에 표시된다. build_dist.py 의 VERSION 과 맞춘다
 
 app = FastAPI(title="참고문헌 실존 확인", docs_url=None, redoc_url=None)
 JOBS: dict[str, dict] = {}

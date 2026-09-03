@@ -17,7 +17,7 @@ from urllib.parse import quote
 import httpx
 from rapidfuzz import fuzz
 
-from . import cache, riss
+from . import cache, kosha, riss
 from .parse import (KOREA_HINT_RE, ParsedRef, detect_lang, norm_for_match, parse_reference)
 
 UA = "RefCheck/1.0 (local reference verification tool)"
@@ -491,6 +491,55 @@ async def riss_lookup(client, ref: ParsedRef, exhaustive: bool) -> list[Candidat
     return list(found.values())
 
 
+# ---------------------------------------------------------------- KOSHA 연구보고서
+async def kosha_year_cached(client, year: int) -> list[kosha.Report]:
+    key = f"kosha:year:{year}"
+    if not _bypass_cache:
+        hit = cache.get(key)
+        if hit is not None:
+            return [kosha.Report(**d) for d in hit]
+    try:
+        rows = await kosha.search(client, year=year)
+    except httpx.HTTPError as e:
+        raise LookupFailed("KOSHA " + type(e).__name__)
+    cache.put(key, [r.to_dict() for r in rows])
+    return rows
+
+
+async def kosha_lookup(client, ref: ParsedRef) -> list[Candidate]:
+    """공단 연구보고서는 국문 제목만 있어 영문 인용과 글자로 못 견준다.
+    발행연도로 그 해 목록을 받아 저자 성으로 거르고, 분야 용어가 얼마나 맞는지로 고른다."""
+    if not ref.year or not ref.year.isdigit():
+        return []
+    surnames = kosha.surname_candidates(ref.first_author)
+    terms = kosha.korean_terms(ref.title or ref.raw)
+    if not terms:
+        return []
+    rows = await kosha_year_cached(client, int(ref.year))
+    picked = kosha.pick(rows, surnames, terms)
+    if not picked:
+        return []
+    top = picked[0]
+    runner = len(picked[1].terms) if len(picked) > 1 else 0
+    unique_best = len(top.terms) > runner
+    # 성·연도로 좁힌 뒤 분야 용어가 여럿 맞고 2등과 뚜렷이 갈리면 그 보고서로 본다.
+    if unique_best and len(top.terms) >= 2:
+        sim = 95.0
+    elif unique_best:
+        sim = 75.0
+    else:
+        sim = 72.0
+    c = Candidate("kosha", top.title, top.authors, top.year, "산업안전보건연구원", None, top.url,
+                  {"report_no": top.no, "terms": top.terms, "surname_matched": bool(surnames),
+                   "match_by": "저자 성·발행연도·분야 용어 대조"})
+    c.title_sim = sim
+    c.year_ok = True                       # 그 해 목록에서 골랐다
+    c.author_ok = True if surnames else None
+    c.container_ok = None                  # 국문 발행처라 영문 인용과 견줄 수 없다
+    c.score = round(min(1.0, sim / 100 * 0.72 + 0.15 + (0.10 if surnames else 0.04) + 0.02), 3)
+    return [c]
+
+
 async def check_url(client, url: str) -> tuple[str, str]:
     async with _sem_web:
         try:
@@ -518,6 +567,8 @@ def build_links(ref: ParsedRef, best: Optional[Candidate], status: str) -> list[
     if best is not None and status in ("verified", "likely"):
         if best.doi:
             links.append({"label": "DOI 원문", "url": "https://doi.org/" + best.doi, "kind": "primary"})
+        if best.source == "kosha":
+            links.append({"label": "안전보건공단 원문", "url": best.url, "kind": "primary"})
         if best.source == "riss":
             tag = {"free": " (무료)", "paid": " (유료)", "yes": ""}.get(best.extra.get("fulltext"), "")
             links.append({"label": "RISS 상세·원문보기" + tag,
@@ -544,6 +595,8 @@ def build_links(ref: ParsedRef, best: Optional[Candidate], status: str) -> list[
             col = {"thesis": "bib_t", "book": "bib_m", "report": "re_t"}.get(
                 ref.kind, "re_a_kor" if _korea_related(ref) else "re_a_over")
             links.append({"label": "RISS에서 검색", "url": riss.search_url(q, col), "kind": "primary"})
+            if kosha.mentions_kosha(ref.raw):
+                links.insert(0, {"label": "안전보건공단 연구보고서", "url": kosha.LIST_URL, "kind": "primary"})
         if ref.doi:
             links.append({"label": "DOI 링크(확인 필요)", "url": "https://doi.org/" + ref.doi, "kind": "secondary"})
     if ref.url and ref.kind == "web":
@@ -619,9 +672,12 @@ async def check_one(client: httpx.AsyncClient, ref: ParsedRef, opts: Options) ->
     want_riss = _korea_related(ref) or opts.riss_all
     if want_riss:
         tasks["riss"] = riss_lookup(client, ref, opts.exhaustive)
+    # 안전보건공단 보고서는 다른 어느 DB에도 없다. 발행처가 공단이면 공단 포털을 직접 본다.
+    if kosha.mentions_kosha(ref.raw):
+        tasks["kosha"] = kosha_lookup(client, ref)
 
     SRC_LABEL = {"doi": "DOI", "crossref": "Crossref", "crossref_title": "Crossref",
-                 "openalex": "OpenAlex", "riss": "RISS"}
+                 "openalex": "OpenAlex", "riss": "RISS", "kosha": "안전보건공단"}
     keys = list(tasks)
     got = await asyncio.gather(*tasks.values(), return_exceptions=True)
     errors: list[str] = []
@@ -641,7 +697,7 @@ async def check_one(client: httpx.AsyncClient, ref: ParsedRef, opts: Options) ->
             sources.append(SRC_LABEL.get(k, k))
             if res:
                 for c in res:
-                    if c.source != "riss":
+                    if c.source not in ("riss", "kosha"):   # 이 둘은 조회 단계에서 이미 채점했다
                         score_candidate(ref, c)
                 _merge(pool, list(res))
 
@@ -727,8 +783,13 @@ async def check_one(client: httpx.AsyncClient, ref: ParsedRef, opts: Options) ->
                     break
 
     if best is not None:
-        src_label = {"crossref": "Crossref", "openalex": "OpenAlex", "riss": "RISS", "doi": "DOI"}[best.source]
-        notes.append(f"{src_label}에서 후보 발견(제목 유사도 {best.title_sim:.0f}%)")
+        src_label = {"crossref": "Crossref", "openalex": "OpenAlex", "riss": "RISS",
+                     "doi": "DOI", "kosha": "안전보건공단"}.get(best.source, best.source)
+        if best.source == "kosha":
+            notes.append(f"안전보건공단 연구보고서와 대조({best.extra.get('match_by', '')}"
+                         f", 맞은 주제어: {', '.join(best.extra.get('terms') or [])})")
+        else:
+            notes.append(f"{src_label}에서 후보 발견(제목 유사도 {best.title_sim:.0f}%)")
         if best.year_ok is False:
             notes.append(f"연도 불일치(문헌 {ref.year} / 후보 {best.year})")
         if best.author_ok is False:

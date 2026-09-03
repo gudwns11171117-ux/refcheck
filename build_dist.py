@@ -12,7 +12,7 @@ import subprocess
 import sys
 import zipfile
 
-VERSION = "1.6"
+VERSION = "1.7"
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.join(ROOT, "dist")
 OUT = os.path.join(ROOT, "배포")
@@ -137,6 +137,7 @@ AI가 지어낸 가짜 참고문헌이나 연도·저자 오기를 걸러내는 
   위에서 못 찾은 것   마지막에 OpenAlex (하루 한도를 아끼려고 맨 뒤에 둡니다)
   영문 인용 국내 문헌  Korea, Seoul, KOSHA 같은 표시가 있으면 RISS 국내 컬렉션도 함께
   DOI 가 있는 문헌   Crossref 에 DOI 를 직접 조회해 등록된 제목과 대조
+  공단 연구보고서     안전보건공단 포털을 직접 조회 (다른 DB 에는 실려 있지 않습니다)
   웹 자료           적힌 주소에 실제로 접속되는지 확인
   법령             조회하지 않고 국가법령정보센터 링크만 제공
 

@@ -21,7 +21,10 @@ VOL_RE = re.compile(
 THESIS_RE = re.compile(r"학위\s*논문|석사|박사|dissertation|thesis|Ph\.?\s?D|Master['’]?s|Doctoral|대학원", re.I)
 LAW_RE = re.compile(
     r"(?:법률|시행령|시행규칙|고시|훈령|예규|조례|규칙)\b|법\s*제\s*\d+\s*조|제\s*\d+\s*조|국가법령정보센터|법제처|"
-    r"(?:산업안전보건법|근로기준법|중대재해\s*처벌\s*등에\s*관한\s*법률|중대재해처벌법)|\bAct\b(?!\w)|\bRegulation\b|\bDirective\b",
+    r"(?:산업안전보건법|근로기준법|중대재해\s*처벌\s*등에\s*관한\s*법률|중대재해처벌법)|\bAct\b(?!\w)|\bRegulation\b|\bDirective\b|"
+    # 영문으로 인용된 정부 고시·지침 (예: Ministry of Employment and Labor (2020). Guidelines ... [2020-53])
+    r"Ministry\s+of\s+[A-Za-z\s]{3,40}\s*\(\s*(?:19|20)\d{2}\s*\)[^.]{0,120}?\b(?:Guidelines?|Notice|Public\s+Notice)\b|"
+    r"\bGuidelines?\b[^.]{0,80}?\[\s*(?:19|20)\d{2}\s*[-–]\s*\d{1,4}\s*\]",
     re.I,
 )
 REPORT_RE = re.compile(
