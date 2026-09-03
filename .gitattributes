@@ -1,0 +1,8 @@
+# .bat 은 CP949 로 저장되어 있고 cmd 가 CRLF 를 요구한다. 깃이 손대지 않도록 둔다.
+*.bat -text
+
+# 나머지 텍스트는 체크아웃 시 OS 기본 줄바꿈으로
+* text=auto
+*.py text eol=lf
+*.html text eol=lf
+*.md text eol=lf
