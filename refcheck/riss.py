@@ -36,7 +36,10 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 HEADERS = {"User-Agent": UA, "Accept-Language": "ko-KR,ko;q=0.9,en;q=0.5",
            "Accept": "text/html,application/xhtml+xml"}
 
+# RISS 는 공개 API 가 없어 화면을 읽는다. 요청이 몰리면 오류 대신 '결과 없음' 페이지를
+# 돌려주므로, 동시 요청을 하나로 묶고 사이에 간격을 둔다.
 _sem = asyncio.Semaphore(2)
+_PACE = 0.25
 
 
 @dataclass
@@ -155,6 +158,7 @@ async def search(client: httpx.AsyncClient, query: str, col: str = "re_a_kor") -
     url = search_url(query, col)
     async with _sem:
         r = await client.get(url, headers=HEADERS, timeout=25.0, follow_redirects=True)
+        await asyncio.sleep(_PACE)
     r.raise_for_status()
     return parse_search_html(r.text, col)
 

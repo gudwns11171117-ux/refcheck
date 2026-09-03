@@ -18,7 +18,7 @@ import httpx
 from rapidfuzz import fuzz
 
 from . import cache, kosha, riss
-from .parse import (KOREA_HINT_RE, ParsedRef, detect_lang, norm_for_match, parse_reference)
+from .parse import (HANGUL_RE, KOREA_HINT_RE, ParsedRef, detect_lang, norm_for_match, parse_reference)
 
 UA = "RefCheck/1.0 (local reference verification tool)"
 API_HEADERS = {"User-Agent": UA, "Accept": "application/json"}
@@ -144,6 +144,14 @@ def _sim(ref: ParsedRef, c: Candidate) -> float:
             ratio_len = len(ct) / max(1, len(rt))
             if 0.85 <= ratio_len <= 1.18:
                 s = max(s, fuzz.token_set_ratio(rt, ct))
+            # 한글은 띄어쓰기가 문헌마다 달라(그리고 PDF에서 아예 빠지기도 해서)
+            # 공백을 지우고 한 번 더 견준다. '공동구실태조사…' 와 '공동구 실태 조사…' 는 같은 글이다.
+            if HANGUL_RE.search(rt) or HANGUL_RE.search(ct):
+                a, b = rt.replace(" ", ""), ct.replace(" ", "")
+                if a and b:
+                    s = max(s, fuzz.ratio(a, b))
+                    if 0.85 <= len(b) / max(1, len(a)) <= 1.18:
+                        s = max(s, fuzz.partial_ratio(a, b))
         # 제목 추출이 어긋났을 때를 대비해 원문 전체와도 대본다.
         # 다만 후보 제목이 참고문헌 제목의 일부만 덮어도 높게 나오므로 길이 조건을 빡빡하게 둔다.
         # ("Seismic Risk Assessment in Workplaces" 가 "Guidelines for Risk Assessment in Workplaces"
@@ -368,9 +376,40 @@ def _clean_query(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+HANGUL_SP = re.compile(r"[가-힣] [가-힣]")
+# 토막 끝에 붙으면 검색이 어긋나는 조사·접속어
+_EDGE = ("및", "을", "를", "의", "에", "와", "과", "은", "는", "이", "가", "로", "한", "적")
+
+
+def _trim_particles(w: str) -> str:
+    for _ in range(2):
+        if len(w) > 3 and w[-1] in _EDGE:
+            w = w[:-1]
+        if len(w) > 3 and w[0] in _EDGE:
+            w = w[1:]
+    return w
+
+
+def _is_unspaced_korean(t: str) -> bool:
+    h = len(HANGUL_RE.findall(t or ""))
+    return h >= 8 and len(HANGUL_SP.findall(t or "")) < h * 0.10
+
+
 def _riss_queries(ref: ParsedRef) -> list[str]:
     """긴 제목은 RISS에서 오히려 안 걸리므로 짧은 변형도 같이 준비한다."""
     out: list[str] = []
+    # 띄어쓰기 없이 뽑힌 한글 제목은 그대로 넣으면 RISS가 한 건도 못 찾는다.
+    # 저자 이름은 한글 그대로라 믿을 수 있으니, 저자와 제목 토막을 묶어 묻는다.
+    if ref.title and _is_unspaced_korean(ref.title):
+        t = re.sub(r"[\s\(\)\[\]“”\"',.·]", "", ref.title)
+        au = ref.first_author if ref.first_author and HANGUL_RE.search(ref.first_author) else ""
+        for off, size in ((0, 4), (0, 6), (3, 4), (3, 6), (6, 5), (2, 5)):
+            w = _trim_particles(t[off:off + size])
+            if len(w) >= 3:
+                q = (au + " " + w).strip()
+                if q not in out:
+                    out.append(q)
+        return out[:4]
     title = _clean_query(ref.title or "")
     if title:
         out.append(title[:120])
@@ -426,7 +465,10 @@ async def riss_search_cached(client, q: str, col: str) -> list[riss.RissItem]:
             last = type(e).__name__
             await asyncio.sleep(1.0 * (attempt + 1))
             continue
-        cache.put(key, [i.to_dict() for i in items[:10]])
+        # 결과가 없는 응답은 캐시하지 않는다. RISS 는 요청이 몰리면 오류 대신
+        # 빈 결과 페이지를 돌려주는데, 그것을 저장해 두면 30일 동안 '없는 문헌'이 되어 버린다.
+        if items:
+            cache.put(key, [i.to_dict() for i in items[:10]])
         return items[:10]
     raise LookupFailed("RISS " + last)
 
@@ -489,8 +531,15 @@ async def riss_lookup(client, ref: ParsedRef, exhaustive: bool) -> list[Candidat
         queries, cols = queries[:1], cols[:1]
     found: dict[str, Candidate] = {}
     failures = 0
+    # 붙여 쓴 한글은 질의 변형이 여러 개라 컬렉션까지 곱하면 요청이 너무 많아진다.
+    # 대표 컬렉션으로 변형을 다 훑어보고, 그래도 없을 때만 다른 컬렉션을 본다.
+    many_queries = len(queries) > 1
     for qi, q in enumerate(queries):
-        for col in cols:
+        if many_queries:
+            use_cols = cols[:1]
+        else:
+            use_cols = cols if qi == 0 else cols[:1]
+        for col in use_cols:
             try:
                 items = await riss_search_cached(client, q, col)
             except LookupFailed:
@@ -503,13 +552,44 @@ async def riss_lookup(client, ref: ParsedRef, exhaustive: bool) -> list[Candidat
                 c = _riss_cand(it)
                 score_candidate(ref, c)
                 found[key] = c
-            # 국문 제목만 돌아온 경우 영문 제목을 채워 넣어야 제대로 견줄 수 있다
-            await enrich_riss_titles(client, ref, list(found.values()))
-            if any(_is_strong(c) for c in found.values()):
-                return list(found.values())
-        if qi == 0 and found and max(c.title_sim for c in found.values()) >= 80:
-            # 첫 질의에서 그럴듯한 것이 나왔으면 변형까지는 가지 않는다
-            break
+        # 국문 제목만 돌아온 경우 영문 제목을 채워 넣어야 제대로 견줄 수 있다
+        await enrich_riss_titles(client, ref, list(found.values()))
+        # 확실한 것이 나왔을 때만 멈춘다. 어중간한 점수로 멈추면 정답을 놓친다.
+        if any(c.title_sim >= 95 and c.score >= 0.85 for c in found.values()):
+            return list(found.values())
+    # 한 건도 못 찾았으면 잠시 쉬었다 대표 질의를 한 번만 다시 본다.
+    # RISS 는 요청이 몰리면 오류 대신 빈 페이지를 주므로, 진짜 없는 것인지 가려야 한다.
+    if not found:
+        await asyncio.sleep(1.5)
+        try:
+            for it in await riss_search_cached(client, queries[0], cols[0]):
+                key = it.control_no or norm_for_match(it.title)[:60]
+                if key not in found:
+                    c = _riss_cand(it)
+                    score_candidate(ref, c)
+                    found[key] = c
+            if found:
+                await enrich_riss_titles(client, ref, list(found.values()))
+        except LookupFailed:
+            failures += 1
+
+    # 대표 컬렉션에서 아무것도 못 찾았으면 다른 컬렉션도 한 번 본다
+    if many_queries and not found and len(cols) > 1:
+        for col in cols[1:]:
+            try:
+                items = await riss_search_cached(client, queries[0], col)
+            except LookupFailed:
+                failures += 1
+                continue
+            for it in items:
+                key = it.control_no or norm_for_match(it.title)[:60]
+                if key not in found:
+                    c = _riss_cand(it)
+                    score_candidate(ref, c)
+                    found[key] = c
+            if found:
+                await enrich_riss_titles(client, ref, list(found.values()))
+                break
     if not found and failures:
         raise LookupFailed(f"RISS 조회 {failures}건 실패")
     return list(found.values())

@@ -36,7 +36,7 @@ STATIC = resource_path("static")
 DEFAULT_PORT = int(os.environ.get("REFCHECK_PORT", "8765"))
 MAX_UPLOAD = 60 * 1024 * 1024
 PING_TOKEN = "refcheck-local"
-VERSION = "1.8"          # 화면 오른쪽 위에 표시된다. build_dist.py 의 VERSION 과 맞춘다
+VERSION = "1.9"          # 화면 오른쪽 위에 표시된다. build_dist.py 의 VERSION 과 맞춘다
 
 app = FastAPI(title="참고문헌 실존 확인", docs_url=None, redoc_url=None)
 JOBS: dict[str, dict] = {}
@@ -59,6 +59,24 @@ async def index():
         os.path.join(STATIC, "index.html"), media_type="text/html",
         headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"},
     )
+
+
+LAST_SEEN = {"t": time.time()}
+IDLE_QUIT_SEC = 15 * 60      # 브라우저가 이만큼 소식이 없으면 스스로 끝낸다
+
+
+@app.post("/api/alive")
+async def api_alive():
+    """브라우저가 살아 있다고 알린다. 창을 숨기고 돌기 때문에 이 신호로 수명을 관리한다."""
+    LAST_SEEN["t"] = time.time()
+    return {"ok": True}
+
+
+@app.post("/api/quit")
+async def api_quit():
+    """화면의 '프로그램 종료' 단추. 검은 창이 없으니 여기서 끝낼 수 있어야 한다."""
+    threading.Timer(0.4, lambda: os._exit(0)).start()
+    return {"ok": True}
 
 
 @app.get("/api/ping")
@@ -211,6 +229,14 @@ def _pick_port() -> int:
     return DEFAULT_PORT
 
 
+def _idle_watch():
+    """브라우저를 닫고 잊어버려도 프로그램이 계속 떠 있지 않도록 지켜본다."""
+    while True:
+        time.sleep(30)
+        if time.time() - LAST_SEEN["t"] > IDLE_QUIT_SEC:
+            os._exit(0)
+
+
 def main() -> int:
     quiet = os.environ.get("REFCHECK_NO_BROWSER") == "1" or "--no-browser" in sys.argv
 
@@ -222,6 +248,8 @@ def main() -> int:
         return 0
 
     port = _pick_port()
+    LAST_SEEN["t"] = time.time()
+    threading.Thread(target=_idle_watch, daemon=True).start()
     if not quiet:
         threading.Thread(target=_open_browser, args=(port,), daemon=True).start()
     # 한글 콘솔(CP949)에서 인코딩 오류가 나지 않도록 특수문자는 쓰지 않는다

@@ -79,6 +79,47 @@ EARLY_YEAR = re.compile(r"^.{0,60}?[\(（]\s*(?:1[89]\d{2}|20\d{2})[a-z]?\s*[\)�
 
 
 # ---------------------------------------------------------------- 문서 → 줄
+def _merge_row_fragments(plines: list[Line]) -> list[Line]:
+    """한 줄이 여러 조각으로 쪼개져 나오는 PDF를 원래 줄로 되돌린다.
+
+    학위논문 PDF는 양쪽 정렬 때문에 '안전보건공단' '(2011).' '원인결과분석…' 처럼
+    낱말 단위로 끊겨 나오는 일이 잦다. 그대로 두면 줄 수가 부풀어 2단 조판으로 오인하고,
+    그 결과 제목 줄이 엉뚱한 자리로 밀린다.
+    """
+    if not plines:
+        return []
+    plines = sorted(plines, key=lambda l: (round(l.y0, 0), l.x0))
+    out: list[Line] = []
+    for l in plines:
+        if out:
+            p = out[-1]
+            size = max(1.0, l.size, p.size)
+            same_row = abs(l.y0 - p.y0) <= max(2.0, 0.3 * size)
+            gap = l.x0 - p.x1
+            # 단 사이 여백(보통 20pt 이상)보다 좁을 때만 같은 줄로 본다
+            if same_row and -2.0 <= gap <= max(15.0, 1.5 * size):
+                p.text = p.text + ("" if gap <= 1.0 else " ") + l.text
+                p.x1 = max(p.x1, l.x1)
+                p.size = max(p.size, l.size)
+                continue
+        out.append(Line(l.text, l.x0, l.y0, l.x1, l.page, 0, l.size))
+    return out
+
+
+def _is_two_column(plines: list[Line], width: float) -> bool:
+    """진짜 2단인지 본다. 좁은 줄이 많다는 것만으로는 부족하고, 가운데 여백이 있어야 한다."""
+    if len(plines) < 10:
+        return False
+    narrow = [l for l in plines if (l.x1 - l.x0) < 0.55 * width]
+    if len(narrow) < 0.6 * len(plines):
+        return False
+    mid = width / 2
+    left = [l for l in narrow if l.x1 <= mid + 10]
+    right = [l for l in narrow if l.x0 >= mid - 10]
+    crossing = [l for l in plines if l.x0 < mid - 10 and l.x1 > mid + 10]
+    return len(left) >= 3 and len(right) >= 3 and len(crossing) <= 0.15 * len(plines)
+
+
 def _pdf_lines(data: bytes) -> tuple[list[Line], int]:
     doc = pymupdf.open(stream=data, filetype="pdf")
     all_lines: list[Line] = []
@@ -98,9 +139,9 @@ def _pdf_lines(data: bytes) -> tuple[list[Line], int]:
                 plines.append(Line(txt, x0, y0, x1, pno, 0, size))
         if not plines:
             continue
-        # 2단 판형 감지: 줄 너비가 페이지 절반 이하인 줄이 대다수면 2단
-        narrow = sum(1 for l in plines if (l.x1 - l.x0) < 0.55 * width)
-        two_col = narrow >= 0.6 * len(plines) and len(plines) >= 8
+        # 낱말 단위로 쪼개져 나온 조각을 먼저 한 줄로 되돌린 뒤에 판형을 본다
+        plines = _merge_row_fragments(plines)
+        two_col = _is_two_column(plines, width)
         if two_col:
             for l in plines:
                 center = (l.x0 + l.x1) / 2
@@ -229,7 +270,15 @@ def _longest_chain(markers: list[tuple[int, int]]) -> list[tuple[int, int]]:
     return best
 
 
-def _join_group(texts: list[str]) -> str:
+HANGUL_CH = re.compile(r"[가-힣]")
+
+
+def _join_group(texts: list[str], glue_hangul: bool = False) -> str:
+    """줄을 이어 붙인다. glue_hangul 이면 한글끼리는 공백 없이 붙인다.
+
+    띄어쓰기 없이 추출되는 한글 PDF에서는 줄바꿈 자리에 공백을 넣으면
+    '개선방안연 구' 처럼 낱말이 쪼개져 검색이 안 된다.
+    """
     out = ""
     for t in texts:
         t = t.strip()
@@ -242,13 +291,33 @@ def _join_group(texts: list[str]) -> str:
             out = out[:-1] + t
         elif out.endswith(("-", "–")) and re.match(r"^\d", t):
             out = out + t
+        elif glue_hangul and HANGUL_CH.match(out[-1]) and HANGUL_CH.match(t[0]):
+            out = out + t
         else:
             out = out + " " + t
     out = re.sub(r"\s+", " ", out).strip()
     return out
 
 
-def _join_groups(texts: list[str], starts: list[int], strip_marker: bool = False) -> list[str]:
+HANGUL_SPACE_HANGUL = re.compile(r"[가-힣] [가-힣]")
+
+
+def _unspaced_korean(texts: list[str]) -> bool:
+    """한글을 띄어쓰기 없이 뽑아내는 PDF인지 가린다.
+
+    한글 사이에 공백이 들어간 비율로 본다. 제대로 띄어 쓴 글은 0.25 안팎이고,
+    아래아한글에서 나온 일부 PDF는 0.05 아래로 떨어진다. 그런 문서는 줄바꿈 자리에
+    공백을 넣으면 '개선방안연 구' 처럼 낱말이 갈라져 검색이 되지 않는다.
+    """
+    body = " ".join(texts)
+    hangul = len(HANGUL_CH.findall(body))
+    if hangul < 60:
+        return False
+    return len(HANGUL_SPACE_HANGUL.findall(body)) < hangul * 0.10
+
+
+def _join_groups(texts: list[str], starts: list[int], strip_marker: bool = False,
+                 glue: bool = False) -> list[str]:
     starts = sorted(set(starts))
     if not starts or starts[0] != 0:
         starts = [0] + starts
@@ -257,7 +326,7 @@ def _join_groups(texts: list[str], starts: list[int], strip_marker: bool = False
         chunk = texts[a:b]
         if strip_marker and chunk:
             chunk = [NUM_RE.sub("", chunk[0], count=1)] + chunk[1:]
-        s = _join_group(chunk)
+        s = _join_group(chunk, glue)
         if s:
             refs.append(s)
     return refs
@@ -327,6 +396,7 @@ def _paragraph_refs(texts: list[str]) -> list[str]:
 
 def split_references(section: list[Line], has_geom: bool, para_mode: bool) -> tuple[list[str], str]:
     texts = [l.text for l in section]
+    glue = _unspaced_korean(texts)
     # 1) 번호 붙은 목록
     markers = []
     for i, t in enumerate(texts):
@@ -341,7 +411,7 @@ def split_references(section: list[Line], has_geom: bool, para_mode: bool) -> tu
         if lead and len(" ".join(lead)) < 20:      # 헤딩 잔여물
             texts = texts[starts[0]:]
             starts = [i - chain[0][0] for i, _ in chain]
-        return _join_groups(texts, starts, strip_marker=True), "numbered"
+        return _join_groups(texts, starts, strip_marker=True, glue=glue), "numbered"
     # 2) 문단 단위 문서
     if para_mode:
         return _paragraph_refs(texts), "paragraph"
@@ -349,12 +419,12 @@ def split_references(section: list[Line], has_geom: bool, para_mode: bool) -> tu
     if has_geom:
         st = _indent_starts(section)
         if st and len(st) >= 2:
-            refs = _join_groups(texts, st)
+            refs = _join_groups(texts, st, glue=glue)
             bad = sum(1 for r in refs if not YEAR_RE.search(r))
             if bad <= len(refs) * 0.5:
                 return refs, "indent"
     # 4) 텍스트 휴리스틱
-    return _join_groups(texts, _heuristic_starts(texts)), "heuristic"
+    return _join_groups(texts, _heuristic_starts(texts), glue=glue), "heuristic"
 
 
 # ---------------------------------------------------------------- 진입점
