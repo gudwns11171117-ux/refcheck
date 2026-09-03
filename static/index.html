@@ -5,101 +5,190 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>참고문헌 실존 확인</title>
 <style>
-:root{--bg:#f6f7f9;--card:#fff;--line:#e3e6ea;--text:#1f2328;--muted:#656d76;--accent:#2f5fd0;--accent-bg:#e8eefc;
-      --ok:#1a7f37;--ok-bg:#dafbe1;--warn:#9a6700;--warn-bg:#fff8c5;--bad:#cf222e;--bad-bg:#ffebe9;--skip:#57606a;--skip-bg:#eaeef2}
+:root{
+  --ink:#111827; --ink-2:#374151; --muted:#6b7280; --faint:#9ca3af;
+  --line:#e5e7eb; --line-2:#eef1f5;
+  --paper:#ffffff; --bg:#f4f5f7; --bg-2:#fafbfc;
+  --accent:#1d4ed8; --accent-2:#1e40af; --accent-bg:#eef4ff; --accent-line:#c7dbff;
+  --ok:#136c3a; --ok-bg:#e7f6ec; --ok-line:#b7e2c6;
+  --warn:#8a5a00; --warn-bg:#fdf3d9; --warn-line:#f0dda3;
+  --bad:#b3261e; --bad-bg:#fdeceb; --bad-line:#f3c3bf;
+  --skip:#4b5563; --skip-bg:#eef0f3; --skip-line:#dcdfe4;
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 24px -12px rgba(16,24,40,.14);
+  --sans:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --serif:"Noto Serif KR","Batang","Times New Roman",serif;
+  --mono:"D2Coding","Consolas","Menlo",monospace;
+}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.5}
-.wrap{max-width:1200px;margin:0 auto;padding:28px 20px 60px}
-header h1{font-size:22px;margin:0 0 4px}
-.ver{font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-bg);border-radius:999px;padding:2px 9px;vertical-align:middle;margin-left:4px}
-header p{margin:0;color:var(--muted)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin-top:16px}
-.card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
-.step{display:inline-flex;width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;align-items:center;justify-content:center;flex:none}
-.tabs{display:flex;gap:6px;margin-bottom:12px}
-.tab{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:13px}
-.tab.active{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);font-weight:600}
-.drop{border:2px dashed #c9d1d9;border-radius:10px;padding:30px;text-align:center;color:var(--muted);cursor:pointer;transition:.15s}
+html{-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.55}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px 72px}
+
+/* ── 머리말 ───────────────────────────────── */
+.masthead{background:linear-gradient(180deg,#fff 0%,var(--bg-2) 100%);border-bottom:1px solid var(--line);
+          margin:0 -20px 22px;padding:22px 20px 20px}
+.masthead .inner{max-width:1140px;margin:0 auto;display:flex;align-items:center;gap:14px}
+.logo{width:38px;height:38px;flex:none;border-radius:10px;box-shadow:var(--shadow)}
+.masthead h1{font-size:19px;margin:0;letter-spacing:-.01em;font-weight:700;display:flex;align-items:center;gap:8px}
+.masthead p{margin:3px 0 0;color:var(--muted);font-size:13px;max-width:80ch}
+.ver{font-size:11px;font-weight:600;color:var(--accent-2);background:var(--accent-bg);
+     border:1px solid var(--accent-line);border-radius:999px;padding:1px 8px;letter-spacing:.02em}
+
+/* ── 카드 ─────────────────────────────────── */
+.card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin-top:16px;box-shadow:var(--shadow)}
+.card h2{font-size:14.5px;margin:0 0 12px;display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:-.01em}
+.step{display:inline-flex;width:23px;height:23px;border-radius:7px;background:var(--ink);color:#fff;
+      font-size:12px;font-weight:700;align-items:center;justify-content:center;flex:none}
+
+/* ── 입력 ─────────────────────────────────── */
+.tabs{display:inline-flex;gap:3px;margin-bottom:14px;background:var(--bg);padding:3px;border-radius:9px;border:1px solid var(--line)}
+.tab{border:0;background:transparent;border-radius:7px;padding:6px 14px;cursor:pointer;font-size:13px;color:var(--muted);font-family:inherit}
+.tab.active{background:var(--paper);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(16,24,40,.08)}
+.drop{border:1.5px dashed #cbd2dc;border-radius:12px;padding:34px;text-align:center;color:var(--muted);cursor:pointer;
+      transition:border-color .15s,background .15s;background:var(--bg-2)}
+.drop:hover{border-color:var(--accent-line);background:var(--accent-bg)}
 .drop.over{border-color:var(--accent);background:var(--accent-bg)}
-.drop strong{color:var(--text)}
-textarea{width:100%;min-height:170px;border:1px solid var(--line);border-radius:8px;padding:10px;font:13px/1.6 "Consolas","D2Coding",monospace;resize:vertical}
+.drop strong{color:var(--ink);font-size:14.5px}
+textarea{width:100%;min-height:170px;border:1px solid var(--line);border-radius:10px;padding:12px 14px;
+         font:12.5px/1.7 var(--mono);resize:vertical;background:var(--bg-2);color:var(--ink)}
+textarea:focus,input:focus,select:focus{outline:2px solid var(--accent-line);outline-offset:-1px;background:#fff}
+
+/* ── 버튼 ─────────────────────────────────── */
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .row.between{justify-content:space-between}
-.btn{border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:8px;padding:8px 16px;font-size:14px;cursor:pointer;text-decoration:none;display:inline-block}
-.btn.secondary{background:#fff;color:var(--accent)}
-.btn:disabled{opacity:.5;cursor:default}
-.muted{color:var(--muted);font-size:13px}
-.meta{margin:8px 0 0;font-size:13px;color:var(--muted)}
-.warn{background:var(--warn-bg);border:1px solid #f1e3a0;border-radius:8px;padding:8px 12px;margin:10px 0 0;font-size:13px}
-.err{background:var(--bad-bg);border:1px solid #f5c2c7;border-radius:8px;padding:8px 12px;margin:10px 0 0;font-size:13px}
-.options{margin:12px 0;font-size:13px;display:flex;gap:16px;flex-wrap:wrap}
-.options label{cursor:pointer}
-.progress{height:8px;background:#eaeef2;border-radius:4px;overflow:hidden;margin:10px 0 6px}
-.progress>div{height:100%;background:var(--accent);width:0;transition:width .3s}
-.chips{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 4px}
-.chip{border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:13px;cursor:pointer;background:#fff}
-.chip.active{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);font-weight:600}
-.chip b{font-weight:700}
-.tablewrap{overflow-x:auto}
-table{width:100%;border-collapse:collapse;margin-top:8px;min-width:900px}
-th,td{border-top:1px solid var(--line);padding:10px 8px;text-align:left;vertical-align:top;font-size:13px}
-th{background:#f6f8fa;font-weight:600;color:var(--muted);font-size:12px;white-space:nowrap}
-td.num{color:var(--muted);width:34px}
-.badge{display:inline-block;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600;white-space:nowrap}
-.b-verified{background:var(--ok-bg);color:var(--ok)}
-.b-likely{background:var(--warn-bg);color:var(--warn)}
-.b-unverified{background:var(--bad-bg);color:var(--bad)}
-.b-skipped,.b-error{background:var(--skip-bg);color:var(--skip)}
-.raw{white-space:pre-wrap;word-break:break-word}
-.sub{color:var(--muted);font-size:12px;margin-top:3px;word-break:break-word}
-.links a{display:inline-block;margin:2px 4px 2px 0;padding:3px 9px;border-radius:6px;font-size:12px;text-decoration:none;border:1px solid var(--accent);color:var(--accent);background:#fff;white-space:nowrap}
-.links a.primary{background:var(--accent);color:#fff}
-.kind{display:inline-block;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-top:6px}
-.note{color:var(--muted);font-size:12px;word-break:keep-all}
-.flags{margin-top:5px;display:flex;gap:4px;flex-wrap:wrap}
-.flag{font-size:11px;font-weight:600;border-radius:4px;padding:1px 6px;background:var(--bad-bg);color:var(--bad);white-space:nowrap}
-.flag.mild{background:var(--warn-bg);color:var(--warn)}
-.srcs{font-size:11px;color:var(--muted);margin-top:5px}
-.sumbar{border:1px solid var(--line);border-left:4px solid var(--bad);background:#fff;border-radius:8px;padding:10px 14px;margin:10px 0 2px;font-size:13px}
+.btn{border:1px solid var(--ink);background:var(--ink);color:#fff;border-radius:9px;padding:8px 17px;font-size:13.5px;
+     font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;font-family:inherit;transition:.12s}
+.btn:hover{background:#000;border-color:#000}
+.btn.secondary{background:#fff;color:var(--ink-2);border-color:var(--line)}
+.btn.secondary:hover{background:var(--bg);border-color:#cbd2dc}
+.btn:disabled{opacity:.45;cursor:default}
+.muted{color:var(--muted);font-size:12.5px}
+.meta{margin:9px 0 0;font-size:12.5px;color:var(--muted)}
+.warn{background:var(--warn-bg);border:1px solid var(--warn-line);border-radius:9px;padding:9px 13px;margin:10px 0 0;font-size:12.5px;color:var(--warn)}
+.err{background:var(--bad-bg);border:1px solid var(--bad-line);border-radius:9px;padding:9px 13px;margin:10px 0 0;font-size:12.5px;color:var(--bad)}
+
+/* ── 옵션 ─────────────────────────────────── */
+.options{margin:14px 0;font-size:12.5px;display:flex;gap:8px;flex-wrap:wrap}
+.options label{cursor:pointer;border:1px solid var(--line);border-radius:8px;padding:7px 12px;background:var(--bg-2);
+               display:flex;align-items:center;gap:7px;transition:.12s}
+.options label:hover{border-color:#cbd2dc}
+.options label:has(input:checked){border-color:var(--accent-line);background:var(--accent-bg)}
+.options input[type=checkbox]{accent-color:var(--accent);margin:0}
+select{border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:12.5px;margin-left:2px;font-family:inherit;background:#fff}
+
+/* ── 진행/요약 ─────────────────────────────── */
+.progress{height:5px;background:var(--line-2);border-radius:3px;overflow:hidden;margin:12px 0 4px}
+.progress>div{height:100%;background:linear-gradient(90deg,var(--accent),#3b82f6);width:0;transition:width .35s}
+.sumbar{border:1px solid var(--line);border-left:3px solid var(--bad);background:var(--bg-2);border-radius:10px;
+        padding:12px 16px;margin:12px 0 2px;font-size:13px;line-height:1.65}
 .sumbar.clean{border-left-color:var(--ok)}
-.sumbar b{font-size:14px}
-.apalist{margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:16px 18px;background:#fff;
-         font-family:"Malgun Gothic","Apple SD Gothic Neo",system-ui,serif;font-size:13.5px;line-height:1.85;max-height:520px;overflow:auto}
-.apalist p{margin:0 0 8px}
+.sumbar b{font-size:14.5px;font-weight:700}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 2px}
+.chip{border:1px solid var(--line);border-radius:8px;padding:5px 12px;font-size:12.5px;cursor:pointer;background:#fff;
+      color:var(--ink-2);transition:.12s;font-weight:500}
+.chip:hover{border-color:#cbd2dc;background:var(--bg-2)}
+.chip.active{border-color:var(--ink);background:var(--ink);color:#fff;font-weight:600}
+.chip b{font-weight:700}
+
+/* ── 표 ───────────────────────────────────── */
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px;margin-top:12px;background:#fff}
+table{width:100%;border-collapse:collapse;min-width:940px}
+th,td{padding:13px 12px;text-align:left;vertical-align:top;font-size:12.8px}
+thead th{background:var(--bg-2);font-weight:600;color:var(--muted);font-size:11.5px;white-space:nowrap;
+         letter-spacing:.03em;text-transform:uppercase;border-bottom:1px solid var(--line)}
+tbody tr+tr td{border-top:1px solid var(--line-2)}
+tbody tr:hover{background:#fcfdff}
+td.num{color:var(--faint);width:38px;font-variant-numeric:tabular-nums;font-weight:600}
+.badge{display:inline-block;border-radius:7px;padding:3px 9px;font-size:11.5px;font-weight:700;white-space:nowrap;border:1px solid}
+.b-verified{background:var(--ok-bg);color:var(--ok);border-color:var(--ok-line)}
+.b-likely{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-line)}
+.b-unverified{background:var(--bad-bg);color:var(--bad);border-color:var(--bad-line)}
+.b-skipped,.b-error{background:var(--skip-bg);color:var(--skip);border-color:var(--skip-line)}
+.raw{white-space:pre-wrap;word-break:break-word;line-height:1.6}
+.sub{color:var(--muted);font-size:11.8px;margin-top:4px;word-break:break-word;line-height:1.55}
+.links a{display:inline-block;margin:2px 4px 2px 0;padding:4px 10px;border-radius:7px;font-size:11.8px;text-decoration:none;
+         border:1px solid var(--line);color:var(--ink-2);background:#fff;white-space:nowrap;font-weight:500;transition:.12s}
+.links a:hover{border-color:#cbd2dc;background:var(--bg-2)}
+.links a.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.links a.primary:hover{background:var(--accent-2);border-color:var(--accent-2)}
+.kind{display:inline-block;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:5px;padding:1px 6px;margin-top:6px}
+.note{color:var(--muted);font-size:11.8px;word-break:keep-all;line-height:1.6}
+.flags{margin-top:6px;display:flex;gap:4px;flex-wrap:wrap}
+.flag{font-size:10.8px;font-weight:700;border-radius:5px;padding:2px 7px;background:var(--bad-bg);color:var(--bad);
+      border:1px solid var(--bad-line);white-space:nowrap}
+.flag.mild{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-line)}
+.srcs{font-size:11px;color:var(--faint);margin-top:6px}
+.best-title{font-weight:600;word-break:break-word;color:var(--accent-2)}
+
+/* ── APA 목록 ─────────────────────────────── */
+.apalist{margin-top:14px;border:1px solid var(--line);border-radius:11px;padding:22px 26px;background:#fff;
+         font-family:var(--serif);font-size:13.5px;line-height:1.95;max-height:540px;overflow:auto}
+.apalist p{margin:0 0 10px}
 .apalist p.hang{padding-left:2em;text-indent:-2em}
 .apalist p.bad{color:var(--bad)}
-.apalist .why{font-size:11px;color:var(--bad);margin-left:6px;white-space:nowrap}
-.apalist .grouphead{font-size:11px;color:var(--muted);font-weight:600;margin:10px 0 6px;letter-spacing:.03em}
+.apalist .why{font-family:var(--sans);font-size:10.8px;color:var(--bad);margin-left:8px;white-space:nowrap;font-weight:600}
+.apalist .grouphead{font-family:var(--sans);font-size:10.8px;color:var(--faint);font-weight:700;margin:16px 0 8px;
+                    letter-spacing:.09em;text-transform:uppercase;border-bottom:1px solid var(--line-2);padding-bottom:5px}
 .apalist .grouphead:first-child{margin-top:0}
-select{border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:13px;margin-left:4px}
-details#keyBox{margin:2px 0 12px;font-size:13px}
-details#keyBox summary{cursor:pointer;color:var(--accent);width:fit-content}
-details#keyBox .keybody{border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-top:8px;background:#fbfcfe}
-details#keyBox p{margin:0 0 8px;line-height:1.6}
-input[type=password]{border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;width:340px;max-width:100%}
-.overlay{position:fixed;inset:0;background:rgba(31,35,40,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
-.dialog{background:#fff;border-radius:12px;padding:22px 24px;max-width:560px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.25)}
-.dialog h3{margin:0 0 6px;font-size:16px}
-.dialog p{margin:0 0 14px}
-#fmtOpts{display:flex;gap:8px;flex-wrap:wrap}
-#fmtOpts label{border:1px solid var(--line);border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:6px}
-#fmtOpts label.on{border-color:var(--accent);background:var(--accent-bg);color:var(--accent);font-weight:600}
-#fmtOpts input{margin:0}
-.fmtPreview{margin-top:14px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:#f6f8fa;
-            font-size:12.5px;line-height:1.8;color:var(--muted);white-space:pre-wrap;word-break:break-word;max-height:150px;overflow:auto}
+
+/* ── 키 입력 ──────────────────────────────── */
+details#keyBox{margin:2px 0 14px;font-size:12.5px}
+details#keyBox summary{cursor:pointer;color:var(--accent);width:fit-content;font-weight:600;list-style:none}
+details#keyBox summary::-webkit-details-marker{display:none}
+details#keyBox summary::before{content:"⊕ ";font-weight:400}
+details[open]#keyBox summary::before{content:"⊖ "}
+details#keyBox .keybody{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-top:10px;background:var(--bg-2)}
+details#keyBox p{margin:0 0 9px;line-height:1.65}
+input[type=password]{border:1px solid var(--line);border-radius:8px;padding:7px 11px;font-size:12.5px;width:330px;max-width:100%;
+                     font-family:var(--mono);background:#fff}
+
+/* ── 형식 선택 창 ─────────────────────────── */
+.overlay{position:fixed;inset:0;background:rgba(17,24,39,.5);display:flex;align-items:center;justify-content:center;
+         z-index:50;padding:20px;backdrop-filter:blur(2px)}
+.dialog{background:#fff;border-radius:16px;padding:24px 26px;max-width:580px;width:100%;
+        box-shadow:0 24px 64px -12px rgba(16,24,40,.4)}
+.dialog h3{margin:0 0 6px;font-size:16px;font-weight:700;letter-spacing:-.01em}
+.dialog p{margin:0 0 16px}
+#fmtOpts{display:flex;gap:7px;flex-wrap:wrap}
+#fmtOpts label{border:1px solid var(--line);border-radius:9px;padding:9px 15px;cursor:pointer;font-size:13px;
+               display:flex;align-items:center;gap:7px;background:var(--bg-2);transition:.12s;font-weight:500}
+#fmtOpts label:hover{border-color:#cbd2dc}
+#fmtOpts label.on{border-color:var(--ink);background:var(--ink);color:#fff;font-weight:700}
+#fmtOpts input{margin:0;accent-color:#fff}
+.fmtPreview{margin-top:16px;border:1px solid var(--line);border-radius:10px;padding:14px 16px;background:var(--bg-2);
+            font-family:var(--serif);font-size:12.5px;line-height:1.85;color:var(--ink-2);white-space:pre-wrap;
+            word-break:break-word;max-height:160px;overflow:auto}
+
+/* ── 기타 ─────────────────────────────────── */
 .hidden{display:none}
-.best-title{font-weight:600;word-break:break-word}
-footer{margin-top:28px;color:var(--muted);font-size:12px;line-height:1.7}
-.spinner{display:inline-block;width:14px;height:14px;border:2px solid #c9d1d9;border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px;margin-right:6px}
+footer{margin-top:32px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:11.8px;line-height:1.85}
+footer b{color:var(--ink-2)}
+footer div+div{margin-top:5px}
+.spinner{display:inline-block;width:13px;height:13px;border:2px solid var(--line);border-top-color:var(--accent);
+         border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px;margin-right:7px}
 @keyframes spin{to{transform:rotate(360deg)}}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#d5d9e0;border-radius:5px;border:2px solid #fff}
+::-webkit-scrollbar-thumb:hover{background:#c2c7d0}
+@media (max-width:720px){
+  .wrap{padding:0 14px 48px}
+  .masthead{margin:0 -14px 18px;padding:18px 14px 16px}
+  .card{padding:16px 15px;border-radius:12px}
+  .apalist{padding:16px 18px}
+}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <h1>참고문헌 실존 확인 <span class="ver" id="ver"></span></h1>
-    <p>논문 파일을 넣으면 마지막 참고문헌 목록을 읽어, 각 문헌이 실제로 존재하는지 Crossref·OpenAlex·RISS에서 확인하고 원문으로 가는 링크를 붙여 드립니다.</p>
-  </header>
+  <div class="masthead">
+    <div class="inner">
+      <svg class="logo" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect x="6" y="6" width="244" height="244" rx="54" fill="#1d4ed8"/><path d="M66 44h84l42 42v128H66z" fill="#fff"/><path d="M150 44v42h42z" fill="#c7dbff"/><g fill="#dbe6fb"><rect x="86" y="108" width="86" height="8" rx="4"/><rect x="86" y="130" width="70" height="8" rx="4"/><rect x="86" y="152" width="86" height="8" rx="4"/><rect x="86" y="174" width="70" height="8" rx="4"/></g><circle cx="186" cy="190" r="46" fill="#136c3a" stroke="#fff" stroke-width="8"/><path d="M166 190l15 16 27-33" fill="none" stroke="#fff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div>
+        <h1>참고문헌 실존 확인 <span class="ver" id="ver"></span></h1>
+        <p>논문의 참고문헌이 실제로 존재하는 문헌인지 Crossref · RISS · OpenAlex에서 확인하고, 원문으로 가는 링크와 APA 정렬 목록을 만들어 드립니다.</p>
+      </div>
+    </div>
+  </div>
 
   <!-- 1단계: 입력 -->
   <section class="card" id="card1">
@@ -310,8 +399,7 @@ $('#verifyBtn').onclick = async () => {
   const refs = $('#refText').value.split('\n').map(s => s.trim()).filter(Boolean);
   if (!refs.length) { alert('검증할 참고문헌이 없습니다.'); return; }
   const options = {riss_all: $('#optRissAll').checked, check_urls: $('#optCheckUrls').checked,
-                   strict: $('#optStrict').checked, exhaustive: $('#optExhaustive').checked,
-                   openalex_key: loadKey()};
+                   strict: $('#optStrict').checked, exhaustive: $('#optExhaustive').checked};
   $('#verifyBtn').disabled = true;
   if (pollTimer) clearTimeout(pollTimer);
   const r = await fetch('/api/verify', {method:'POST', headers:{'Content-Type':'application/json'},
@@ -391,24 +479,31 @@ function render(j){
 // 화면과 프로그램 버전이 어긋나 옛 화면을 보고 있는지 한눈에 알 수 있게 표시한다
 fetch('/api/ping').then(r => r.json()).then(d => {
   if (d.version) $('#ver').textContent = 'v' + d.version;
+  hasKey = !!d.has_key;
+  showKey();
 }).catch(() => {});
 
 // ---- OpenAlex 키 (이 브라우저에만 저장한다. 서버는 조회할 때만 쓰고 저장하지 않는다)
-const KEY_STORE = 'refcheck.openalex_key';
-function loadKey(){ try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
-function keyStatus(){
-  const k = loadKey();
-  $('#keyMsg').textContent = k ? `키 저장됨 (하루 1,000회)` : '키 없음 (하루 100회)';
-  $('#optKey').value = k ? '••••••••••••' : '';
+// 키는 서버(이 컴퓨터)의 파일에 저장한다. 브라우저를 바꿔도 유지되고, 프로그램 파일에는 들어가지 않는다.
+let hasKey = false;
+function showKey(){
+  $('#keyMsg').textContent = hasKey ? '키 저장됨 (하루 1,000회)' : '키 없음 (하루 100회)';
+  $('#optKey').value = hasKey ? '••••••••••••' : '';
+}
+async function putKey(v){
+  try {
+    const r = await fetch('/api/key', {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                       body: JSON.stringify({key: v})});
+    hasKey = (await r.json()).has_key;
+  } catch (e) {}
+  showKey();
 }
 $('#keySave').onclick = () => {
   const v = $('#optKey').value.trim();
   if (!v || v.startsWith('•')) { $('#keyMsg').textContent = '키를 붙여넣고 저장을 누르세요.'; return; }
-  try { localStorage.setItem(KEY_STORE, v); } catch (e) {}
-  keyStatus();
+  putKey(v);
 };
-$('#keyClear').onclick = () => { try { localStorage.removeItem(KEY_STORE); } catch (e) {} keyStatus(); };
-keyStatus();
+$('#keyClear').onclick = () => putKey('');
 
 // ---- APA 정렬 목록
 const HANGUL = /[가-힣]/;

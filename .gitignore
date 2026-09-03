@@ -14,3 +14,6 @@ icon.ico
 # 실행 중 생기는 것
 cache/
 *.log
+
+# OpenAlex 키. 절대 저장소에 올리지 않는다.
+openalex_key.txt

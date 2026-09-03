@@ -36,3 +36,31 @@ def data_dir() -> str:
 
 def cache_dir() -> str:
     return os.path.join(data_dir(), "cache")
+
+
+def key_file() -> str:
+    """OpenAlex 키를 두는 곳. 이 컴퓨터에만 남고 프로그램 파일에는 들어가지 않는다."""
+    return os.path.join(data_dir(), "openalex_key.txt")
+
+
+def load_key() -> str:
+    try:
+        with open(key_file(), "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def save_key(key: str) -> None:
+    path = key_file()
+    key = (key or "").strip()
+    try:
+        if not key:
+            if os.path.exists(path):
+                os.remove(path)
+            return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(key)
+    except OSError:
+        pass

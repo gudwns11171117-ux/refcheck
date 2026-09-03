@@ -29,14 +29,14 @@ if not getattr(sys, "frozen", False):
 from refcheck.export import to_xlsx                       # noqa: E402
 from refcheck.extract import extract_references, split_pasted_text   # noqa: E402
 from refcheck.parse import parse_reference                # noqa: E402
-from refcheck.paths import resource_path                  # noqa: E402
+from refcheck.paths import key_file, load_key, resource_path, save_key   # noqa: E402
 from refcheck.verify import Options, unavailable_sources, verify_all   # noqa: E402
 
 STATIC = resource_path("static")
 DEFAULT_PORT = int(os.environ.get("REFCHECK_PORT", "8765"))
 MAX_UPLOAD = 60 * 1024 * 1024
 PING_TOKEN = "refcheck-local"
-VERSION = "1.4"          # 화면 오른쪽 위에 표시된다. build_dist.py 의 VERSION 과 맞춘다
+VERSION = "1.5"          # 화면 오른쪽 위에 표시된다. build_dist.py 의 VERSION 과 맞춘다
 
 app = FastAPI(title="참고문헌 실존 확인", docs_url=None, redoc_url=None)
 JOBS: dict[str, dict] = {}
@@ -64,7 +64,18 @@ async def index():
 @app.get("/api/ping")
 async def api_ping():
     """이미 떠 있는 우리 서버인지 구별하는 표식(중복 실행 방지용)."""
-    return {"app": PING_TOKEN, "version": VERSION}
+    return {"app": PING_TOKEN, "version": VERSION, "has_key": bool(load_key())}
+
+
+class KeyIn(BaseModel):
+    key: str = ""
+
+
+@app.post("/api/key")
+async def api_key(inp: KeyIn):
+    """OpenAlex 키를 이 컴퓨터에만 저장한다. 빈 값이면 지운다."""
+    save_key(inp.key)
+    return {"has_key": bool(load_key()), "path": key_file()}
 
 
 def _pack_refs(raw_refs: list[str]) -> list[dict]:
@@ -112,7 +123,7 @@ async def api_verify(inp: VerifyIn):
     # 논문 심사용이므로 엄격 판정과 전수조사를 기본값으로 둔다
     opts = Options(riss_all=bool(o.get("riss_all", False)), check_urls=bool(o.get("check_urls", True)),
                    strict=bool(o.get("strict", True)), exhaustive=bool(o.get("exhaustive", True)),
-                   openalex_key=str(o.get("openalex_key") or "").strip())
+                   openalex_key=str(o.get("openalex_key") or "").strip() or load_key())
     job_id = uuid.uuid4().hex[:10]
     job = {"id": job_id, "status": "running", "total": len(refs), "done": 0, "results": [None] * len(refs),
            "started": time.time(), "finished": None, "source_name": inp.source_name, "error": None}
