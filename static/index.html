@@ -71,6 +71,11 @@ td.num{color:var(--muted);width:34px}
 .apalist .grouphead{font-size:11px;color:var(--muted);font-weight:600;margin:10px 0 6px;letter-spacing:.03em}
 .apalist .grouphead:first-child{margin-top:0}
 select{border:1px solid var(--line);border-radius:6px;padding:4px 8px;font-size:13px;margin-left:4px}
+details#keyBox{margin:2px 0 12px;font-size:13px}
+details#keyBox summary{cursor:pointer;color:var(--accent);width:fit-content}
+details#keyBox .keybody{border:1px solid var(--line);border-radius:8px;padding:12px 14px;margin-top:8px;background:#fbfcfe}
+details#keyBox p{margin:0 0 8px;line-height:1.6}
+input[type=password]{border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:13px;width:340px;max-width:100%}
 .hidden{display:none}
 .best-title{font-weight:600;word-break:break-word}
 footer{margin-top:28px;color:var(--muted);font-size:12px;line-height:1.7}
@@ -123,6 +128,22 @@ footer{margin-top:28px;color:var(--muted);font-size:12px;line-height:1.7}
       <label><input type="checkbox" id="optCheckUrls" checked> 웹 자료는 URL 접속 여부 확인</label>
       <label><input type="checkbox" id="optRissAll"> 처음부터 RISS도 함께 조회 <span class="muted">(더 느려짐)</span></label>
     </div>
+    <details id="keyBox">
+      <summary>OpenAlex 조회 한도 늘리기 <span class="muted">(선택. 안 넣어도 동작합니다)</span></summary>
+      <div class="keybody">
+        <p class="muted">OpenAlex는 키 없이 하루 100회까지 조회됩니다. 이 툴은 Crossref·RISS로 못 찾은 문헌에만
+          OpenAlex를 부르므로 보통은 넉넉하지만, 많이 쓰시면 무료 키를 받아 넣으세요. <b>하루 1,000회</b>로 늘어납니다.
+          한도를 넘겨도 나머지 조회처로 계속 검증하며, 화면 위에 알려 드립니다.</p>
+        <p class="muted">받는 곳: <a href="https://openalex.org/pricing" target="_blank" rel="noopener">openalex.org/pricing</a>
+          — 이메일로 가입하면 무료 키가 나옵니다. 키는 이 컴퓨터에만 저장되고 어디로도 전송되지 않습니다.</p>
+        <div class="row">
+          <input type="password" id="optKey" placeholder="OpenAlex API 키 붙여넣기" autocomplete="off" spellcheck="false">
+          <button class="btn secondary" id="keySave">저장</button>
+          <button class="btn secondary" id="keyClear">지우기</button>
+          <span class="muted" id="keyMsg"></span>
+        </div>
+      </div>
+    </details>
     <div class="row">
       <button class="btn" id="verifyBtn">실존 여부 확인 시작</button>
       <span class="muted">문헌 수에 따라 수십 초~수 분 걸립니다. 결과는 나오는 대로 아래에 표시됩니다.</span>
@@ -264,7 +285,8 @@ $('#verifyBtn').onclick = async () => {
   const refs = $('#refText').value.split('\n').map(s => s.trim()).filter(Boolean);
   if (!refs.length) { alert('검증할 참고문헌이 없습니다.'); return; }
   const options = {riss_all: $('#optRissAll').checked, check_urls: $('#optCheckUrls').checked,
-                   strict: $('#optStrict').checked, exhaustive: $('#optExhaustive').checked};
+                   strict: $('#optStrict').checked, exhaustive: $('#optExhaustive').checked,
+                   openalex_key: loadKey()};
   $('#verifyBtn').disabled = true;
   if (pollTimer) clearTimeout(pollTimer);
   const r = await fetch('/api/verify', {method:'POST', headers:{'Content-Type':'application/json'},
@@ -340,6 +362,23 @@ function render(j){
     .filter(r => filter === 'all' || r.status === filter || (filter === 'skipped' && r.status === 'error'));
   $('#tbody').innerHTML = rows.map(rowHtml).join('') || `<tr><td colspan="6" class="muted">해당 항목이 없습니다.</td></tr>`;
 }
+
+// ---- OpenAlex 키 (이 브라우저에만 저장한다. 서버는 조회할 때만 쓰고 저장하지 않는다)
+const KEY_STORE = 'refcheck.openalex_key';
+function loadKey(){ try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
+function keyStatus(){
+  const k = loadKey();
+  $('#keyMsg').textContent = k ? `키 저장됨 (하루 1,000회)` : '키 없음 (하루 100회)';
+  $('#optKey').value = k ? '••••••••••••' : '';
+}
+$('#keySave').onclick = () => {
+  const v = $('#optKey').value.trim();
+  if (!v || v.startsWith('•')) { $('#keyMsg').textContent = '키를 붙여넣고 저장을 누르세요.'; return; }
+  try { localStorage.setItem(KEY_STORE, v); } catch (e) {}
+  keyStatus();
+};
+$('#keyClear').onclick = () => { try { localStorage.removeItem(KEY_STORE); } catch (e) {} keyStatus(); };
+keyStatus();
 
 // ---- APA 정렬 목록
 const HANGUL = /[가-힣]/;

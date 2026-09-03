@@ -53,7 +53,11 @@ class VerifyIn(BaseModel):
 
 @app.get("/")
 async def index():
-    return FileResponse(os.path.join(STATIC, "index.html"), media_type="text/html")
+    # 프로그램을 새 버전으로 바꿔도 브라우저가 옛 화면을 계속 쓰지 않도록 캐시를 막는다
+    return FileResponse(
+        os.path.join(STATIC, "index.html"), media_type="text/html",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"},
+    )
 
 
 @app.get("/api/ping")
@@ -106,7 +110,8 @@ async def api_verify(inp: VerifyIn):
     o = inp.options or {}
     # 논문 심사용이므로 엄격 판정과 전수조사를 기본값으로 둔다
     opts = Options(riss_all=bool(o.get("riss_all", False)), check_urls=bool(o.get("check_urls", True)),
-                   strict=bool(o.get("strict", True)), exhaustive=bool(o.get("exhaustive", True)))
+                   strict=bool(o.get("strict", True)), exhaustive=bool(o.get("exhaustive", True)),
+                   openalex_key=str(o.get("openalex_key") or "").strip())
     job_id = uuid.uuid4().hex[:10]
     job = {"id": job_id, "status": "running", "total": len(refs), "done": 0, "results": [None] * len(refs),
            "started": time.time(), "finished": None, "source_name": inp.source_name, "error": None}

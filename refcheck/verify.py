@@ -116,6 +116,7 @@ class Options:
     check_urls: bool = True
     strict: bool = True           # 엄격 판정을 기본으로
     exhaustive: bool = True       # 확실한 일치가 없으면 컬렉션·질의를 넓혀 계속 찾는다
+    openalex_key: str = ""        # 무료 키를 넣으면 OpenAlex 하루 한도가 10배($0.1 -> $1)
 
 
 # ---------------------------------------------------------------- 점수
@@ -314,12 +315,14 @@ def _oa_item(it: dict) -> Candidate:
 _OA_SELECT = "id,doi,title,display_name,publication_year,authorships,primary_location,open_access,type,biblio"
 
 
-async def openalex_search(client, q: str, rows: int = 5) -> list[Candidate]:
+async def openalex_search(client, q: str, rows: int = 5, api_key: str = "") -> list[Candidate]:
     q = re.sub(r"[\"“”「」『』]", " ", q)
     q = re.sub(r"\s+", " ", q).strip()[:300]
     if len(q) < 6:
         return []
     url = f"{OPENALEX}?search={quote(q)}&per-page={rows}&select={_OA_SELECT}"
+    if api_key:
+        url += "&api_key=" + quote(api_key)
     data = await _get_json(client, url, _sem_openalex, "OpenAlex")
     if data.get("_404"):
         return []
@@ -551,12 +554,12 @@ async def check_one(client: httpx.AsyncClient, ref: ParsedRef, opts: Options) ->
     doi_state: Optional[str] = None
     doi_cand: Optional[Candidate] = None
 
-    # 1단계: DOI 직접 조회 + Crossref/OpenAlex 동시 조회
+    # 1단계: DOI 직접 조회 + Crossref (+ 국내 문헌이면 RISS)
+    # OpenAlex 는 하루 무료 한도가 100회뿐이라, 앞의 두 곳에서 확실히 찾지 못한 건에만 뒤에서 부른다.
     tasks: dict[str, object] = {}
     if ref.doi:
         tasks["doi"] = crossref_by_doi(client, ref.doi)
     tasks["crossref"] = crossref_search(client, ref.raw)
-    tasks["openalex"] = openalex_search(client, ref.title or ref.raw)
     want_riss = _korea_related(ref) or opts.riss_all
     if want_riss:
         tasks["riss"] = riss_lookup(client, ref, opts.exhaustive)
@@ -610,16 +613,22 @@ async def check_one(client: httpx.AsyncClient, ref: ParsedRef, opts: Options) ->
             errors.append("RISS")
         b = best_now()
 
-    # 4단계: 그래도 없으면 OpenAlex 를 원문 문자열로 한 번 더
-    if opts.exhaustive and (b is None or not _is_strong(b)) and ref.title:
-        try:
-            extra = await openalex_search(client, ref.raw[:300])
-            for c in extra:
-                score_candidate(ref, c)
-            _merge(pool, extra)
-        except (httpx.HTTPError, LookupFailed):
-            errors.append("OpenAlex")
-        b = best_now()
+    # 4단계: 그래도 확실하지 않으면 이제 OpenAlex 를 부른다 (제목으로, 그래도 없으면 원문으로)
+    if b is None or not _is_strong(b):
+        for q in filter(None, [ref.title or ref.raw, ref.raw[:300] if opts.exhaustive and ref.title else None]):
+            try:
+                extra = await openalex_search(client, q, api_key=opts.openalex_key)
+                for c in extra:
+                    score_candidate(ref, c)
+                _merge(pool, extra)
+                if "OpenAlex" not in sources:
+                    sources.append("OpenAlex")
+            except (httpx.HTTPError, LookupFailed):
+                errors.append("OpenAlex")
+                break
+            b = best_now()
+            if b is not None and _is_strong(b):
+                break
 
     doi_confirmed = False
     if doi_cand is not None:
